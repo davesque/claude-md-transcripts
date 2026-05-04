@@ -8,10 +8,14 @@ with stderr included so callers can decide how to react.
 
 from __future__ import annotations
 
+import logging
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class _RunResult(Protocol):
@@ -63,7 +67,16 @@ class QmdClient:
         Execute ``qmd`` with the given args. Raises :class:`QmdError` on failure.
         """
         argv = [self.binary, *args]
+        logger.debug("qmd: running %s", " ".join(argv))
+        t0 = time.perf_counter()
         result = self._runner(argv)
+        elapsed = time.perf_counter() - t0
+        logger.debug(
+            "qmd: %s exited %d in %.2fs",
+            args[0] if args else "",
+            result.returncode,
+            elapsed,
+        )
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             raise QmdError(f"{' '.join(argv)} failed (exit {result.returncode}): {stderr}")

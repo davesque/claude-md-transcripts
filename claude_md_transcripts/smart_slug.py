@@ -95,6 +95,12 @@ class SmartSlugGenerator:
         if self.model:
             argv += ["--model", self.model]
         argv.append(prompt)
+        logger.debug(
+            "smart_slug: invoking %s (sample %d chars, model=%s)",
+            self.binary,
+            len(sample),
+            self.model,
+        )
         try:
             result = self._runner(argv, timeout=self.timeout)
         except FileNotFoundError:

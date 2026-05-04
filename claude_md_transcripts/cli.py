@@ -54,14 +54,29 @@ def _resolve_collection_name(host_path: Path | None, collection: str | None) -> 
 
 
 @click.group()
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging.")
-def cli(verbose: bool) -> None:
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose (DEBUG) logging.")
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Suppress per-file progress; only show warnings and errors.",
+)
+def cli(verbose: bool, quiet: bool) -> None:
     """
     Convert Claude Code session JSONL transcripts to markdown for qmd.
     """
+    if verbose and quiet:
+        raise click.UsageError("--verbose and --quiet cannot be combined.")
+    if verbose:
+        level = logging.DEBUG
+    elif quiet:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
     logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
+        level=level,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
     )
 
 

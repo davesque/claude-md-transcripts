@@ -10,6 +10,7 @@ can swap out the qmd client or render config without touching this module.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -139,15 +140,37 @@ class SyncOrchestrator:
             output_dir=out_dir,
         )
 
-        for jsonl_path in sorted(session_dir.glob("*.jsonl")):
+        jsonl_paths = sorted(session_dir.glob("*.jsonl"))
+        logger.info(
+            "sync: scanning %s -> %s (collection=%s, %d session files)",
+            session_dir,
+            out_dir,
+            coll_name,
+            len(jsonl_paths),
+        )
+        for i, jsonl_path in enumerate(jsonl_paths, 1):
             summary.files_total += 1
-            self._convert_one(jsonl_path, out_dir, summary)
+            self._convert_one(jsonl_path, out_dir, summary, index=i, total=len(jsonl_paths))
 
+        logger.info("sync: checking qmd collection %r", coll_name)
         if not self.qmd.collection_exists(coll_name):
+            logger.info("sync: registering new qmd collection %r at %s", coll_name, out_dir)
             self.qmd.collection_add(path=out_dir, name=coll_name, mask="**/*.md")
+        else:
+            logger.info("sync: collection %r already exists, leaving as-is", coll_name)
         if description:
+            logger.info("sync: setting qmd context for %r", coll_name)
             self.qmd.context_add(f"qmd://{coll_name}/", description)
+        logger.info("sync: running qmd update")
         self.qmd.update()
+        logger.info(
+            "sync: done %s (converted=%d, unchanged=%d, skipped_for_size=%d, skipped_empty=%d)",
+            coll_name,
+            summary.files_converted,
+            summary.files_unchanged,
+            summary.files_skipped_for_size,
+            summary.files_skipped_empty,
+        )
         return summary
 
     def _output_dir_for(self, collection: str) -> Path:
@@ -158,21 +181,41 @@ class SyncOrchestrator:
             return self.output_root / collection
         return output_dir_for_collection(collection)
 
-    def _convert_one(self, jsonl_path: Path, out_dir: Path, summary: SyncResult) -> None:
+    def _convert_one(
+        self,
+        jsonl_path: Path,
+        out_dir: Path,
+        summary: SyncResult,
+        *,
+        index: int = 0,
+        total: int = 0,
+    ) -> None:
         """
         Convert a single session, applying mtime-based idempotency.
         """
+        progress = f"[{index}/{total}] " if total else ""
+        size_kb = jsonl_path.stat().st_size / 1024
         existing = self._existing_output_for(out_dir, jsonl_path)
         if existing is not None and existing.stat().st_mtime_ns >= jsonl_path.stat().st_mtime_ns:
+            logger.info("%sunchanged: %s (%.0f KB)", progress, jsonl_path.name, size_kb)
             summary.files_unchanged += 1
             return
 
+        logger.info("%sconverting: %s (%.0f KB)", progress, jsonl_path.name, size_kb)
         result = read_session(jsonl_path, max_bytes=self.max_bytes)
         if result.skipped_for_size:
+            logger.info(
+                "%sskipped (size): %s (%.0f KB exceeds %.0f MB)",
+                progress,
+                jsonl_path.name,
+                size_kb,
+                self.max_bytes / 1e6,
+            )
             summary.files_skipped_for_size += 1
             return
         kept = list(result.iter_kept())
         if not kept:
+            logger.info("%sskipped (empty): %s", progress, jsonl_path.name)
             summary.files_skipped_empty += 1
             return
 
@@ -185,6 +228,15 @@ class SyncOrchestrator:
         if existing is not None and existing != target:
             existing.unlink(missing_ok=True)
         target.write_text(markdown, encoding="utf-8")
+        out_kb = len(markdown) / 1024
+        logger.info(
+            "%swrote: %s (%.0f KB, %d records, smart_title=%s)",
+            progress,
+            target.name,
+            out_kb,
+            len(kept),
+            smart_used,
+        )
         summary.files_converted += 1
         summary.converted_paths.append(target)
 
@@ -260,11 +312,19 @@ class SyncOrchestrator:
         out_dir = self._output_dir_for(collection)
         result = RetitleResult(collection=collection, output_dir=out_dir)
         if not out_dir.exists():
+            logger.info("retitle: no output directory at %s, nothing to do", out_dir)
             return result
+        md_paths = sorted(out_dir.glob("*.md"))
+        logger.info(
+            "retitle: scanning %s (%d markdown files, force=%s)",
+            out_dir,
+            len(md_paths),
+            force,
+        )
         any_changes = False
-        for md_path in sorted(out_dir.glob("*.md")):
+        for i, md_path in enumerate(md_paths, 1):
             result.files_total += 1
-            outcome = self._retitle_one(md_path, force=force)
+            outcome = self._retitle_one(md_path, force=force, index=i, total=len(md_paths))
             if outcome == "retitled":
                 result.files_retitled += 1
                 any_changes = True
@@ -273,22 +333,41 @@ class SyncOrchestrator:
             elif outcome == "failed":
                 result.files_skipped_failed += 1
         if any_changes:
+            logger.info("retitle: running qmd update to pick up renames")
             self.qmd.update()
+        else:
+            logger.info("retitle: no changes, skipping qmd update")
+        logger.info(
+            "retitle: done %s (retitled=%d, already_smart=%d, failed=%d)",
+            collection,
+            result.files_retitled,
+            result.files_skipped_already_smart,
+            result.files_skipped_failed,
+        )
         return result
 
-    def _retitle_one(self, md_path: Path, *, force: bool) -> str:
+    def _retitle_one(
+        self, md_path: Path, *, force: bool, index: int = 0, total: int = 0
+    ) -> str:
         """
         Retitle a single markdown file. Returns a status string.
         """
+        progress = f"[{index}/{total}] " if total else ""
         generator = self.smart_slug_generator
         if generator is None:
             return "failed"
         text = md_path.read_text(encoding="utf-8")
         if not force and has_field(text, "smart_title", "true"):
+            logger.info("%salready smart: %s", progress, md_path.name)
             return "already_smart"
+        logger.info("%scalling claude -p: %s", progress, md_path.name)
+        t0 = time.perf_counter()
         smart = generator.generate(text)
+        elapsed = time.perf_counter() - t0
         if not smart:
-            logger.warning("smart-title generation returned nothing for %s", md_path.name)
+            logger.warning(
+                "%sno title returned for %s (%.1fs)", progress, md_path.name, elapsed
+            )
             return "failed"
         new_slug = slugify_title(smart)
         new_text = replace_fields(text, smart_title="true")
@@ -296,6 +375,12 @@ class SyncOrchestrator:
         if new_path != md_path:
             md_path.unlink()
         new_path.write_text(new_text, encoding="utf-8")
+        if new_path != md_path:
+            logger.info(
+                "%sretitled in %.1fs: %r -> %s", progress, elapsed, smart, new_path.name
+            )
+        else:
+            logger.info("%sretitled in %.1fs: %r (no rename)", progress, elapsed, smart)
         return "retitled"
 
     def _renamed_path_for(self, md_path: Path, new_slug: str) -> Path:
