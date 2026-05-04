@@ -36,20 +36,17 @@ Output lands in `~/.claude/qmd-transcripts/<collection>/`, one file per session,
 
 ## Installation
 
-Clone or copy the project, then sync dependencies:
+Install directly from GitHub with `uv tool`:
 
 ```sh
-cd ~/projects/claude-md-transcripts
-uv sync
+uv tool install git+https://github.com/davesque/claude-md-transcripts.git
 ```
 
-If you'd prefer a system-wide install:
+This puts the `claude-md-transcripts` command on your `PATH` in an isolated environment. To upgrade later, run `uv tool upgrade claude-md-transcripts`. To uninstall, `uv tool uninstall claude-md-transcripts`.
 
-```sh
-uv tool install --from . claude-md-transcripts
-```
+If you'd rather work from a local clone (e.g. to hack on the tool), see the [Development](#development) section below.
 
-Verify:
+Verify the install:
 
 ```sh
 claude-md-transcripts --help
