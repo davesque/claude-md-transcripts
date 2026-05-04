@@ -120,3 +120,102 @@ def test_help_lists_subcommands():
     assert result.exit_code == 0
     for cmd in ("sync", "sync-all", "inspect"):
         assert cmd in result.output
+
+
+def test_sync_without_args_in_non_tty_raises_usage_error():
+    """When stdin/stdout aren't TTYs, sync without HOST_PATH refuses to run."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+    assert result.exit_code != 0
+    assert "HOST_PATH" in result.output or "session-dir" in result.output
+
+
+def test_sync_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
+    """With no positional path, the sync command drops into the picker and
+    syncs each selected project with auto-derived collection/description."""
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+    for name, sid in (
+        ("-Users-fake-projects-foo", "aaaaaaaa-1111-1111-1111-111111111111"),
+        ("-Users-fake-projects-bar", "bbbbbbbb-2222-2222-2222-222222222222"),
+    ):
+        d = proj_dir / name
+        d.mkdir()
+        _write_minimal_session(d / f"{sid}.jsonl", session_id=sid)
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    fake_qmd = tmp_path / "fake-qmd.sh"
+    fake_qmd.write_text("#!/bin/sh\nexit 0\n")
+    fake_qmd.chmod(0o755)
+    monkeypatch.setenv("CLAUDE_MD_TRANSCRIPTS_QMD_BIN", str(fake_qmd))
+
+    # Pretend stdin/stdout are TTYs and stub the picker to select both.
+    import claude_md_transcripts.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "is_tty", lambda: True)
+
+    captured: dict = {}
+
+    def fake_pick_projects(projects, *, prompter=None):
+        captured["projects"] = projects
+        return list(projects)
+
+    monkeypatch.setattr(cli_module, "pick_projects", fake_pick_projects)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+    assert result.exit_code == 0, result.output
+
+    # Both projects were offered to the picker
+    basenames = {p.basename for p in captured["projects"]}
+    assert {"foo", "bar"} <= basenames
+
+    # Both got synced and produced output
+    out_root = fake_home / ".claude" / "qmd-transcripts"
+    assert (out_root / "foo-claude-sessions").exists()
+    assert (out_root / "bar-claude-sessions").exists()
+    assert "Totals across 2 projects" in result.output
+
+
+def test_sync_interactive_cancel_prints_cancelled(tmp_path: Path, monkeypatch):
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+    d = proj_dir / "-Users-fake-projects-foo"
+    d.mkdir()
+    _write_minimal_session(d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    import claude_md_transcripts.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "is_tty", lambda: True)
+    monkeypatch.setattr(cli_module, "pick_projects", lambda p, prompter=None: None)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+    assert result.exit_code == 0
+    assert "Cancelled" in result.output
+
+
+def test_sync_interactive_empty_selection_prints_nothing_selected(
+    tmp_path: Path, monkeypatch
+):
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+    d = proj_dir / "-Users-fake-projects-foo"
+    d.mkdir()
+    _write_minimal_session(d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    import claude_md_transcripts.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "is_tty", lambda: True)
+    monkeypatch.setattr(cli_module, "pick_projects", lambda p, prompter=None: [])
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["sync"])
+    assert result.exit_code == 0
+    assert "Nothing selected" in result.output

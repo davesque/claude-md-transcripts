@@ -54,7 +54,22 @@ claude-md-transcripts --help
 
 ## Quick start
 
-For a single project:
+The fastest way in is to run `sync` with no arguments. It scans `~/.claude/projects/` and shows a checklist:
+
+```sh
+claude-md-transcripts sync
+```
+
+```
+? Select projects to sync (space to toggle, enter to confirm)
+> [ ] qmd                       (5 sessions, 1.3 MB)
+  [x] claude-md-transcripts     (15 sessions, 720 KB)
+  [ ] nexus                     (45 sessions, 444 MB)
+```
+
+Each selected project gets a default collection name (`<basename>-claude-sessions`) and a default description (`Claude Code session transcripts for <basename>`). Boolean flags like `--smart-titles` and `--include-thinking` apply to every selected project.
+
+For a single project by path:
 
 ```sh
 # Convert and index all Claude Code sessions for one host project.
@@ -69,7 +84,7 @@ qmd embed
 qmd query "the auth bug we debugged" -c qmd-claude-sessions
 ```
 
-For everything at once:
+For everything at once, no prompts:
 
 ```sh
 claude-md-transcripts sync-all
@@ -83,9 +98,12 @@ claude-md-transcripts retitle-all   # optional, slower, costs a small amount per
 Convert one project's sessions into markdown and register the result with qmd.
 
 ```sh
+claude-md-transcripts sync                       # interactive multi-select
 claude-md-transcripts sync HOST_PATH [OPTIONS]
 claude-md-transcripts sync --session-dir DIR [OPTIONS]
 ```
+
+If neither `HOST_PATH` nor `--session-dir` is given, the command drops into an interactive checklist of every project found under `~/.claude/projects/`. Highlighted rows show the project's full host path beneath as a hint. Each selected project gets a default collection name (`<basename>-claude-sessions`) and description (`Claude Code session transcripts for <basename>`). Boolean flags (`--include-thinking`, `--smart-titles`) apply to every selected project.
 
 Options:
 

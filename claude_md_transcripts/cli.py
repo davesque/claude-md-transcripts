@@ -17,12 +17,14 @@ from pathlib import Path
 
 import click
 
+from .discovery import ProjectInfo, discover_projects
 from .paths import claude_projects_dir, output_dir_for_collection, resolve_session_dir
+from .picker import is_tty, pick_projects
 from .qmd import QmdClient
 from .reader import DEFAULT_MAX_BYTES, read_session
 from .render import RenderConfig
 from .smart_slug import SmartSlugGenerator
-from .sync import SyncOrchestrator, default_collection_name
+from .sync import SyncOrchestrator, SyncResult, default_collection_name
 
 
 def _make_orchestrator(
@@ -112,16 +114,28 @@ def sync(
     max_bytes: int,
 ) -> None:
     """
-    Convert one host project's sessions and register them with qmd.
-    """
-    if host_path is None and session_dir is None:
-        raise click.UsageError("Provide either HOST_PATH or --session-dir.")
+    Convert one or more host projects' sessions and register them with qmd.
 
+    With no positional path or ``--session-dir``, drops into an interactive
+    multi-select for projects discovered under ``~/.claude/projects/``.
+    """
     orch = _make_orchestrator(
         include_thinking=include_thinking,
         max_bytes=max_bytes,
         smart_titles=smart_titles,
     )
+
+    if host_path is None and session_dir is None:
+        if not is_tty():
+            raise click.UsageError(
+                "Provide HOST_PATH or --session-dir, or run interactively in a terminal."
+            )
+        _run_interactive_sync(orch, collection=collection, description=description)
+        return
+
+    if collection is None and host_path is None and session_dir is not None:
+        # Permit defaulting from the session dir.
+        pass
 
     if session_dir is not None:
         result = orch.sync_session_dir(session_dir, collection=collection, description=description)
@@ -135,6 +149,88 @@ def sync(
             raise click.ClickException(str(e)) from e
 
     _print_sync_summary(result)
+
+
+def _run_interactive_sync(
+    orch: SyncOrchestrator,
+    *,
+    collection: str | None,
+    description: str | None,
+) -> None:
+    """
+    Discover projects, prompt the user to pick a subset, and sync each one.
+
+    Boolean flags from the CLI (``--include-thinking``, ``--smart-titles``,
+    ``--max-bytes``) are already baked into ``orch``. Per-project collection
+    names and descriptions are auto-derived from each project's basename
+    unless the user explicitly passed ``--collection`` or ``--description``
+    (in which case they're applied uniformly to every selection, which is
+    almost certainly not what they want and gets a warning).
+    """
+    projects = discover_projects(claude_projects_dir())
+    if not projects:
+        click.echo(f"No project directories found under {claude_projects_dir()}.")
+        return
+
+    if collection is not None or description is not None:
+        click.echo(
+            "Note: --collection / --description override the per-project defaults "
+            "and will apply to every selected project. Skip those flags to get the "
+            "default '<basename>-claude-sessions' collection and "
+            "'Claude Code session transcripts for <basename>' description.",
+            err=True,
+        )
+
+    selected = pick_projects(projects)
+    if selected is None:
+        click.echo("Cancelled.")
+        return
+    if not selected:
+        click.echo("Nothing selected.")
+        return
+
+    results: list[SyncResult] = []
+    for info in selected:
+        coll = collection or _default_collection_for(info)
+        desc = description or _default_description_for(info)
+        click.echo(f"\n=== {info.basename} ({coll}) ===")
+        result = orch.sync_session_dir(
+            info.session_dir, collection=coll, description=desc
+        )
+        results.append(result)
+        _print_sync_summary(result, indent="  ")
+
+    if len(results) > 1:
+        totals = {
+            "files_total": sum(r.files_total for r in results),
+            "files_converted": sum(r.files_converted for r in results),
+            "files_unchanged": sum(r.files_unchanged for r in results),
+            "files_skipped_for_size": sum(r.files_skipped_for_size for r in results),
+        }
+        click.echo(
+            "\nTotals across {n} projects: total={t} converted={c} unchanged={u} "
+            "skipped_for_size={s}".format(
+                n=len(results),
+                t=totals["files_total"],
+                c=totals["files_converted"],
+                u=totals["files_unchanged"],
+                s=totals["files_skipped_for_size"],
+            )
+        )
+
+
+def _default_collection_for(info: ProjectInfo) -> str:
+    """
+    Default collection name for an interactively selected project.
+    """
+    return f"{info.basename}-claude-sessions"
+
+
+def _default_description_for(info: ProjectInfo) -> str:
+    """
+    Default qmd context description for an interactively selected project.
+    """
+    return f"Claude Code session transcripts for {info.basename}"
 
 
 @cli.command("sync-all")
