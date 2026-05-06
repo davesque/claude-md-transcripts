@@ -284,7 +284,7 @@ def test_retitle_all_with_explicit_empty_root(tmp_path: Path):
 
 
 def test_retitle_all_with_populated_root(tmp_path, monkeypatch):
-    """retitle-all over a root with subdirs runs retitle_collection on each
+    """retitle-all over a root with subdirs runs Exporter.retitle on each
     and prints a totals line."""
     from claude_md_transcripts.exporter import RetitleResult
 

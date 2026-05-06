@@ -85,7 +85,7 @@ def test_sync_without_smart_generator_does_not_mark_frontmatter(
         assert not has_field(f.read_text(), "smart_title", "true")
 
 
-def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Path):
+def test_retitle_marks_files_smart(session_dir: Path, output_root: Path):
     # First, sync without smart generator so files are heuristic-named.
     plain = Exporter(
         render_config=RenderConfig(),
