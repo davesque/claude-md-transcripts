@@ -1,7 +1,7 @@
 [project]
 name = "claude-md-transcripts"
-version = "0.1.0"
-description = "Convert Claude Code session JSONL transcripts to markdown and index them in qmd."
+version = "0.2.0"
+description = "Convert Claude Code session JSONL transcripts to clean markdown collections."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

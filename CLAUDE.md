@@ -1,10 +1,10 @@
 # claude-md-transcripts
 
-Python tool that converts Claude Code session JSONL transcripts into markdown and indexes them in [qmd](https://github.com/davesque/qmd) for cross-session search.
+Python tool that converts Claude Code session JSONL transcripts into clean markdown collections on disk.
 
 ## Architecture
 
-The pipeline is composed of small, single-responsibility modules wired together by an orchestrator. Construction is by dependency injection, so tests substitute fakes for the qmd CLI and `claude -p` rather than monkey-patching subprocess.
+The pipeline is composed of small, single-responsibility modules wired together by an orchestrator. Construction is by dependency injection, so tests substitute fakes for `claude -p` rather than monkey-patching subprocess.
 
 ```
 JSONL file
@@ -14,13 +14,12 @@ JSONL file
       └─> slug.py       deterministic filename slug from customTitle/heuristic
       └─> smart_slug.py optional live `claude -p` for LLM-generated titles
   └─> sync.py           SyncOrchestrator: sync_session_dir, retitle_collection
-      └─> qmd.py        thin subprocess wrapper around the qmd CLI
-      └─> paths.py      host-path ↔ encoded session-dir mapping
+      └─> paths.py      host-path ↔ encoded session-dir mapping; default output-dir helpers
       └─> frontmatter.py minimal YAML-ish parser for our markdown frontmatter
-  └─> cli.py            click-based commands: sync, sync-all, retitle, retitle-all, inspect
+  └─> cli.py            click-based commands: export, export-all, retitle, retitle-all, inspect
 ```
 
-There are no global singletons. Every external dependency (the `qmd` binary, the `claude` binary, file system roots) is overridable.
+There are no global singletons. Every external dependency (the `claude` binary, file system roots) is overridable.
 
 ## Conventions specific to this project
 
@@ -28,7 +27,7 @@ There are no global singletons. Every external dependency (the `qmd` binary, the
 - `uv` for dependency management, `ruff` for lint and format, `ty` for typecheck, `pytest` + coverage for tests. Coverage gate is 80% (currently around 87%).
 - `make check` is the unified gate (`lint + typecheck + tests`).
 - Pydantic models all use `extra="ignore"` so unknown fields don't break parsing across Claude Code versions. New top-level types or content blocks get a warning and a `SkippedLine`, never an exception.
-- Subprocess wrappers (`QmdClient`, `SmartSlugGenerator`) accept an injected runner callable. In tests, pass a `FakeRunner` that records calls; in production the default wraps `subprocess.run`.
+- Subprocess wrappers (`SmartSlugGenerator`) accept an injected runner callable. In tests, pass a `FakeRunner` that records calls; in production the default wraps `subprocess.run`.
 - Multi-line numpy-style docstrings on all public functions and classes (matches the global rule from `~/.claude/CLAUDE.md`).
 
 ## Test layout
@@ -44,11 +43,11 @@ uv run pytest -k retitle
 
 ## Things to NOT do
 
-- **Don't invoke `qmd embed` or `qmd update` against the user's real index during development.** The `sync` and `retitle` orchestrator paths intentionally call `qmd update` because that's their job. Anywhere else, set `CLAUDE_MD_TRANSCRIPTS_QMD_BIN` to a stub script (the CLI tests show the pattern) or pass a fake `runner` to `QmdClient`.
 - **Don't deduplicate JSONL records by UUID.** Some sessions legitimately contain duplicated UUIDs from session resume/replay. The renderer preserves all of them in source order so the conversation tree stays intact. We discussed this explicitly when building the tool, the user wanted no dedup.
 - **Don't try to render images.** Image content blocks always become a one-line placeholder regardless of size. Base64 PNGs are pure noise for retrieval.
 - **Don't add the `anthropic` SDK.** Smart titles use the user's local `claude` CLI in headless mode (`claude -p`), so we avoid API key plumbing entirely.
 - **Don't run `claude -p` in a tight loop.** It's a real subprocess invocation that costs money and takes ~10 seconds. Smart-title features are opt-in for that reason.
+- **Don't reintroduce qmd-specific behavior into the core.** The tool's job ends at "markdown on disk." Indexers (qmd, ripgrep, embeddings) live outside this repo and are the user's choice.
 
 ## JSONL schema notes
 
@@ -79,10 +78,10 @@ The encoding is lossy in reverse (we can't tell `/` apart from `.`), but forward
 ## Running smoke tests safely
 
 ```sh
-# Inspect a real session (no qmd, no API calls)
+# Inspect a real session (no network, no LLM calls)
 uv run claude-md-transcripts inspect ~/.claude/projects/-Users-me-projects-qmd/<sid>.jsonl
 
-# Render to a temp dir without touching qmd
+# Render to a temp dir without touching the default output root
 uv run python -c "
 from pathlib import Path
 from claude_md_transcripts.reader import read_session
@@ -92,7 +91,7 @@ print(md[:1000])
 "
 ```
 
-To exercise the full pipeline end-to-end without hitting the user's qmd index, construct a `SyncOrchestrator` with a stubbed `QmdClient` runner. The retitle smoke pattern lives in `tests/test_retitle.py` and can be lifted for ad-hoc scripts.
+To exercise the full export pipeline end-to-end without writing into your real output root, construct a `SyncOrchestrator` with `render_config=RenderConfig()` and pass an explicit `output_dir=tmp_path/'something'` to `sync_session_dir`. The retitle smoke pattern lives in `tests/test_retitle.py` and can be lifted for ad-hoc scripts.
 
 ## Dependencies
 

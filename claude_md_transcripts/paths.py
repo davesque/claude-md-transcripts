@@ -1,8 +1,8 @@
 """
 Map host project paths to Claude Code's encoded session directories.
 
-Also locates the output directory under ``~/.claude/qmd-transcripts/`` for a
-given collection name.
+Also provides defaults for the markdown output root and the per-project
+subdirectory naming used by the CLI.
 """
 
 from __future__ import annotations

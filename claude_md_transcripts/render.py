@@ -1,10 +1,11 @@
 """
 Render parsed session records into markdown.
 
-The output is designed for indexing by qmd: text-bearing content is preserved,
-tool I/O is replaced with one-line pointers back into the source JSONL, and
-images are dropped in favor of a placeholder. Frontmatter carries session
-metadata so downstream tools can filter without re-parsing the original file.
+The output is designed for downstream indexing or full-text search:
+text-bearing content is preserved, tool I/O is replaced with one-line
+pointers back into the source JSONL, and images are dropped in favor
+of a placeholder. Frontmatter carries session metadata so downstream
+tools can filter without re-parsing the original file.
 """
 
 from __future__ import annotations
