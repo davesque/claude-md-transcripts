@@ -6,11 +6,9 @@ from pathlib import Path
 import pytest
 
 from claude_md_transcripts.frontmatter import has_field, parse
-from claude_md_transcripts.qmd import QmdClient
 from claude_md_transcripts.render import RenderConfig
 from claude_md_transcripts.smart_slug import SmartSlugGenerator
 from claude_md_transcripts.sync import SyncOrchestrator
-from tests.test_qmd import FakeResult, FakeRunner
 from tests.test_smart_slug import FakeRun
 from tests.test_smart_slug import FakeRunner as ClaudeFakeRunner
 
@@ -51,16 +49,13 @@ def output_root(tmp_path: Path) -> Path:
 
 def make_orch(
     output_root: Path,
-    qmd_responses: list[FakeResult] | None,
     smart_response: FakeRun | Exception | None = None,
 ) -> SyncOrchestrator:
-    qmd_runner = FakeRunner(qmd_responses or [FakeResult(returncode=0)] * 30)
     smart_runner = ClaudeFakeRunner(
         smart_response or FakeRun(stdout="Investigate slow user query\n")
     )
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     return SyncOrchestrator(
-        qmd=QmdClient(runner=qmd_runner),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=smart_gen,
@@ -69,9 +64,9 @@ def make_orch(
 
 def test_sync_with_smart_generator_marks_frontmatter(session_dir: Path, output_root: Path):
     orch = make_orch(
-        output_root, qmd_responses=None, smart_response=FakeRun(stdout="Inline smart title\n")
+        output_root, smart_response=FakeRun(stdout="Inline smart title\n")
     )
-    orch.sync_session_dir(session_dir, collection="coll1", description="x")
+    orch.sync_session_dir(session_dir, collection="coll1")
     md_files = sorted((output_root / "coll1").glob("*.md"))
     assert md_files
     for f in md_files:
@@ -87,11 +82,10 @@ def test_sync_without_smart_generator_does_not_mark_frontmatter(
     session_dir: Path, output_root: Path
 ):
     orch = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
     )
-    orch.sync_session_dir(session_dir, collection="coll1", description="x")
+    orch.sync_session_dir(session_dir, collection="coll1")
     for f in (output_root / "coll1").glob("*.md"):
         assert not has_field(f.read_text(), "smart_title", "true")
 
@@ -99,11 +93,10 @@ def test_sync_without_smart_generator_does_not_mark_frontmatter(
 def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Path):
     # First, sync without smart generator so files are heuristic-named.
     plain = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1", description="x")
+    plain.sync_session_dir(session_dir, collection="coll1")
     md_before = sorted((output_root / "coll1").glob("*.md"))
     assert md_before
     for f in md_before:
@@ -112,7 +105,6 @@ def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Pa
     # Now retitle.
     smart_orch = make_orch(
         output_root,
-        qmd_responses=None,
         smart_response=FakeRun(stdout="Investigate slow user query\n"),
     )
     result = smart_orch.retitle_collection("coll1")
@@ -130,14 +122,13 @@ def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Pa
 
 def test_retitle_skips_already_smart_titled(session_dir: Path, output_root: Path):
     orch = make_orch(
-        output_root, qmd_responses=None, smart_response=FakeRun(stdout="First pass title\n")
+        output_root, smart_response=FakeRun(stdout="First pass title\n")
     )
-    orch.sync_session_dir(session_dir, collection="coll1", description="x")
+    orch.sync_session_dir(session_dir, collection="coll1")
 
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="Different second-pass title\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=smart_gen,
@@ -151,14 +142,13 @@ def test_retitle_skips_already_smart_titled(session_dir: Path, output_root: Path
 
 def test_retitle_force_overrides_existing_smart_flag(session_dir: Path, output_root: Path):
     orch = make_orch(
-        output_root, qmd_responses=None, smart_response=FakeRun(stdout="Initial title\n")
+        output_root, smart_response=FakeRun(stdout="Initial title\n")
     )
-    orch.sync_session_dir(session_dir, collection="coll1", description="x")
+    orch.sync_session_dir(session_dir, collection="coll1")
 
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="Refreshed title\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=smart_gen,
@@ -170,17 +160,15 @@ def test_retitle_force_overrides_existing_smart_flag(session_dir: Path, output_r
 
 def test_retitle_handles_smart_generator_failure(session_dir: Path, output_root: Path):
     plain = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1", description="x")
+    plain.sync_session_dir(session_dir, collection="coll1")
 
     # smart returns nothing
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=smart_gen,
@@ -190,44 +178,8 @@ def test_retitle_handles_smart_generator_failure(session_dir: Path, output_root:
     assert result.files_retitled == 0
 
 
-def test_retitle_runs_qmd_update_only_on_changes(session_dir: Path, output_root: Path):
-    # Sync first with a plain orchestrator
-    plain = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
-        render_config=RenderConfig(),
-        output_root=output_root,
-    )
-    plain.sync_session_dir(session_dir, collection="coll1", description="x")
-
-    # Now retitle. We expect a `qmd update` call after retitle.
-    qmd_runner = FakeRunner([FakeResult(returncode=0)] * 30)
-    smart_runner = ClaudeFakeRunner(FakeRun(stdout="Title here\n"))
-    smart_gen = SmartSlugGenerator(runner=smart_runner)
-    orch = SyncOrchestrator(
-        qmd=QmdClient(runner=qmd_runner),
-        render_config=RenderConfig(),
-        output_root=output_root,
-        smart_slug_generator=smart_gen,
-    )
-    orch.retitle_collection("coll1")
-    update_calls = [c for c in qmd_runner.calls if c == ["qmd", "update"]]
-    assert len(update_calls) == 1
-
-    # Second run skips all (already smart). No update call expected.
-    qmd_runner2 = FakeRunner([FakeResult(returncode=0)] * 30)
-    orch2 = SyncOrchestrator(
-        qmd=QmdClient(runner=qmd_runner2),
-        render_config=RenderConfig(),
-        output_root=output_root,
-        smart_slug_generator=SmartSlugGenerator(runner=ClaudeFakeRunner(FakeRun(stdout="x\n"))),
-    )
-    orch2.retitle_collection("coll1")
-    assert not any(c == ["qmd", "update"] for c in qmd_runner2.calls)
-
-
 def test_retitle_requires_smart_generator(output_root: Path):
     orch = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)])),
         render_config=RenderConfig(),
         output_root=output_root,
     )
@@ -238,7 +190,6 @@ def test_retitle_requires_smart_generator(output_root: Path):
 def test_retitle_returns_empty_for_missing_collection(output_root: Path):
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="t\n"))
     orch = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)])),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=SmartSlugGenerator(runner=smart_runner),
@@ -250,11 +201,10 @@ def test_retitle_returns_empty_for_missing_collection(output_root: Path):
 
 def test_retitle_preserves_other_frontmatter(session_dir: Path, output_root: Path):
     plain = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1", description="x")
+    plain.sync_session_dir(session_dir, collection="coll1")
 
     # Track per-session frontmatter so we can compare deterministically
     # rather than relying on glob order.
@@ -270,7 +220,6 @@ def test_retitle_preserves_other_frontmatter(session_dir: Path, output_root: Pat
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="A new title\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch = SyncOrchestrator(
-        qmd=QmdClient(runner=FakeRunner([FakeResult(returncode=0)] * 10)),
         render_config=RenderConfig(),
         output_root=output_root,
         smart_slug_generator=smart_gen,

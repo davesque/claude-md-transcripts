@@ -3,16 +3,13 @@ Command-line entry point for ``claude-md-transcripts``.
 
 The CLI is intentionally thin: each subcommand wires up the existing
 :class:`SyncOrchestrator` (or the reader directly for ``inspect``) and
-prints a short summary. The qmd binary path can be overridden with the
-``CLAUDE_MD_TRANSCRIPTS_QMD_BIN`` environment variable so that tests and
-sandboxes can substitute a stub.
+prints a short summary.
 """
 
 from __future__ import annotations
 
 import collections
 import logging
-import os
 from pathlib import Path
 
 import click
@@ -20,7 +17,6 @@ import click
 from .discovery import ProjectInfo, discover_projects
 from .paths import claude_projects_dir, output_dir_for_collection, resolve_session_dir
 from .picker import is_tty, pick_projects
-from .qmd import QmdClient
 from .reader import DEFAULT_MAX_BYTES, read_session
 from .render import RenderConfig
 from .smart_slug import SmartSlugGenerator
@@ -31,12 +27,10 @@ def _make_orchestrator(
     *, include_thinking: bool, max_bytes: int, smart_titles: bool = False
 ) -> SyncOrchestrator:
     """
-    Construct a default orchestrator wired to the real qmd binary.
+    Construct a default orchestrator wired for direct markdown export.
     """
-    binary = os.environ.get("CLAUDE_MD_TRANSCRIPTS_QMD_BIN", "qmd")
     smart_gen = SmartSlugGenerator() if smart_titles else None
     return SyncOrchestrator(
-        qmd=QmdClient(binary=binary),
         render_config=RenderConfig(include_thinking=include_thinking),
         max_bytes=max_bytes,
         smart_slug_generator=smart_gen,
@@ -65,7 +59,7 @@ def _resolve_collection_name(host_path: Path | None, collection: str | None) -> 
 )
 def cli(verbose: bool, quiet: bool) -> None:
     """
-    Convert Claude Code session JSONL transcripts to markdown for qmd.
+    Convert Claude Code session JSONL transcripts to markdown collections.
     """
     if verbose and quiet:
         raise click.UsageError("--verbose and --quiet cannot be combined.")

@@ -1,10 +1,10 @@
 """
-Orchestrate end-to-end conversion of a session directory into a qmd collection.
+Orchestrate end-to-end conversion of a session directory into a markdown collection.
 
 The orchestrator wires together :mod:`reader`, :mod:`render`, :mod:`slug`,
-:mod:`paths`, and the :class:`~claude_md_transcripts.qmd.QmdClient` wrapper.
-It is constructed by injection so callers (CLI, tests, future schedulers)
-can swap out the qmd client or render config without touching this module.
+and :mod:`paths`. It is constructed by injection so callers (CLI, tests,
+future schedulers) can swap out the render config or smart-slug generator
+without touching this module.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from pathlib import Path
 
 from .frontmatter import has_field, replace_fields
 from .paths import output_dir_for_collection, resolve_session_dir
-from .qmd import QmdClient
 from .reader import DEFAULT_MAX_BYTES, ReaderResult, read_session
 from .render import RenderConfig, render_session
 from .slug import build_filename, pick_slug, slugify_title
@@ -74,13 +73,10 @@ class RetitleResult:
 
 class SyncOrchestrator:
     """
-    Convert a Claude Code session directory and register it with qmd.
+    Convert a Claude Code session directory and write markdown files.
 
     Parameters
     ----------
-    qmd
-        The :class:`QmdClient` used to register collections, attach context,
-        and trigger re-indexing.
     render_config
         Render toggles passed through to :func:`render_session`.
     output_root
@@ -88,18 +84,18 @@ class SyncOrchestrator:
         ``output_root / <collection>/`` so multiple collections can coexist.
     max_bytes
         Pass-through to the reader for skip-with-warn on huge files.
+    smart_slug_generator
+        Optional generator used to derive LLM-assisted titles during sync.
     """
 
     def __init__(
         self,
         *,
-        qmd: QmdClient,
         render_config: RenderConfig,
         output_root: Path | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
         smart_slug_generator: SmartSlugGenerator | None = None,
     ) -> None:
-        self.qmd = qmd
         self.render_config = render_config
         self.output_root = output_root
         self.max_bytes = max_bytes
@@ -128,7 +124,11 @@ class SyncOrchestrator:
         description: str | None = None,
     ) -> SyncResult:
         """
-        Convert all sessions in ``session_dir`` and register the result with qmd.
+        Convert all sessions in ``session_dir`` and write markdown to the output dir.
+
+        The ``description`` parameter is accepted but ignored; it is kept for
+        one task only so the existing CLI keeps compiling, and is removed in
+        the next task along with the rest of the legacy flag surface.
         """
         coll_name = collection or default_collection_name(session_dir)
         out_dir = self._output_dir_for(coll_name)
@@ -152,17 +152,6 @@ class SyncOrchestrator:
             summary.files_total += 1
             self._convert_one(jsonl_path, out_dir, summary, index=i, total=len(jsonl_paths))
 
-        logger.info("sync: checking qmd collection %r", coll_name)
-        if not self.qmd.collection_exists(coll_name):
-            logger.info("sync: registering new qmd collection %r at %s", coll_name, out_dir)
-            self.qmd.collection_add(path=out_dir, name=coll_name, mask="**/*.md")
-        else:
-            logger.info("sync: collection %r already exists, leaving as-is", coll_name)
-        if description:
-            logger.info("sync: setting qmd context for %r", coll_name)
-            self.qmd.context_add(f"qmd://{coll_name}/", description)
-        logger.info("sync: running qmd update")
-        self.qmd.update()
         logger.info(
             "sync: done %s (converted=%d, unchanged=%d, skipped_for_size=%d, skipped_empty=%d)",
             coll_name,
@@ -301,11 +290,8 @@ class SyncOrchestrator:
         Walks ``output_dir / collection / *.md`` and, for each file that
         does not already carry ``smart_title: true`` in its frontmatter
         (or every file if ``force`` is set), runs the smart-slug generator
-        on the existing markdown body, updates the frontmatter, and
-        renames the file when the resulting slug differs.
-
-        Triggers ``qmd update`` after touching files so the index reflects
-        any renames.
+        on the existing markdown body, updates the frontmatter, and renames
+        the file when the resulting slug differs.
         """
         if self.smart_slug_generator is None:
             raise ValueError("retitle_collection requires a smart_slug_generator")
@@ -321,22 +307,15 @@ class SyncOrchestrator:
             len(md_paths),
             force,
         )
-        any_changes = False
         for i, md_path in enumerate(md_paths, 1):
             result.files_total += 1
             outcome = self._retitle_one(md_path, force=force, index=i, total=len(md_paths))
             if outcome == "retitled":
                 result.files_retitled += 1
-                any_changes = True
             elif outcome == "already_smart":
                 result.files_skipped_already_smart += 1
             elif outcome == "failed":
                 result.files_skipped_failed += 1
-        if any_changes:
-            logger.info("retitle: running qmd update to pick up renames")
-            self.qmd.update()
-        else:
-            logger.info("retitle: no changes, skipping qmd update")
         logger.info(
             "retitle: done %s (retitled=%d, already_smart=%d, failed=%d)",
             collection,
