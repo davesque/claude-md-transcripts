@@ -18,6 +18,7 @@ from .paths import (
     claude_projects_dir,
     default_output_dir_for,
     default_output_root,
+    default_subdir_name,
     resolve_session_dir,
 )
 from .picker import is_tty, pick_projects
@@ -227,7 +228,7 @@ def export_all(
     output_root = output_dir if output_dir is not None else default_output_root()
     total: collections.Counter[str] = collections.Counter()
     for d in project_dirs:
-        out_dir = output_root / _subdir_for(d)
+        out_dir = output_root / default_subdir_name(d)
         click.echo(f"\n→ {d.name}  ({out_dir})")
         result = orch.sync_session_dir(d, output_dir=out_dir)
         _print_export_summary(result, indent="  ")
@@ -241,15 +242,6 @@ def export_all(
         f"unchanged={total['files_unchanged']} "
         f"skipped_for_size={total['files_skipped_for_size']}"
     )
-
-
-def _subdir_for(session_dir: Path) -> str:
-    """
-    Compute the per-project subdir name for export-all.
-    """
-    from .paths import default_subdir_name
-
-    return default_subdir_name(session_dir)
 
 
 @cli.command()

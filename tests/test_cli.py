@@ -6,6 +6,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from claude_md_transcripts.cli import cli
+from claude_md_transcripts.paths import encode_host_path
 
 
 def _write_minimal_session(
@@ -68,7 +69,7 @@ def test_export_with_host_path_uses_default_output_dir(tmp_path: Path, monkeypat
     # Symlink so resolve_session_dir matches encode_host_path of HOST_PATH.
     host_path = tmp_path / "Users" / "fake" / "projects" / "foo"
     host_path.mkdir(parents=True)
-    encoded_for_host = "-" + str(host_path).replace("/", "-").replace(".", "-").lstrip("-")
+    encoded_for_host = encode_host_path(host_path)
     (proj_dir / encoded_for_host).symlink_to(d)
 
     runner = CliRunner()
@@ -237,3 +238,46 @@ def test_export_interactive_empty_selection_prints_nothing_selected(
     result = runner.invoke(cli, ["export"])
     assert result.exit_code == 0
     assert "Nothing selected" in result.output
+
+
+def test_retitle_with_explicit_output_dir(tmp_path: Path, monkeypatch):
+    """retitle on an output dir with no markdown files exits cleanly."""
+    out_dir = tmp_path / "exports" / "test-out"
+    out_dir.mkdir(parents=True)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["retitle", "--output-dir", str(out_dir)])
+    assert result.exit_code == 0, result.output
+    assert "total=0" in result.output
+    assert "retitled=0" in result.output
+
+
+def test_retitle_without_args_raises_usage_error():
+    """retitle with neither HOST_PATH nor --output-dir is a usage error."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["retitle"])
+    assert result.exit_code != 0
+    assert "HOST_PATH" in result.output or "output-dir" in result.output
+
+
+def test_retitle_all_walks_default_root_and_reports_no_subdirs(tmp_path: Path, monkeypatch):
+    """retitle-all on a missing default root prints a no-root message."""
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["retitle-all"])
+    assert result.exit_code == 0
+    assert "No transcripts root" in result.output
+
+
+def test_retitle_all_with_explicit_empty_root(tmp_path: Path):
+    """retitle-all on an explicitly empty root prints 'No subdirectories found.'"""
+    empty_root = tmp_path / "empty-root"
+    empty_root.mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["retitle-all", "--output-dir", str(empty_root)])
+    assert result.exit_code == 0
+    assert "No subdirectories found" in result.output
