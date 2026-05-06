@@ -44,7 +44,7 @@ def session_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def output_root(tmp_path: Path) -> Path:
-    return tmp_path / "qmd-transcripts"
+    return tmp_path / "claude-md-transcripts"
 
 
 def make_orch(

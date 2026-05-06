@@ -15,7 +15,7 @@ from pathlib import Path
 import click
 
 from .discovery import ProjectInfo, discover_projects
-from .paths import claude_projects_dir, output_dir_for_collection, resolve_session_dir
+from .paths import claude_projects_dir, default_output_root, resolve_session_dir
 from .picker import is_tty, pick_projects
 from .reader import DEFAULT_MAX_BYTES, read_session
 from .render import RenderConfig
@@ -312,14 +312,14 @@ def retitle(host_path: Path | None, collection: str | None, force: bool) -> None
 )
 def retitle_all(force: bool) -> None:
     """
-    Apply smart titles to every collection under ~/.claude/qmd-transcripts/.
+    Apply smart titles to every collection under ~/.claude/claude-md-transcripts/.
     """
     orch = _make_orchestrator(
         include_thinking=False,
         max_bytes=DEFAULT_MAX_BYTES,
         smart_titles=True,
     )
-    root = output_dir_for_collection("").parent
+    root = default_output_root()
     if not root.exists():
         click.echo(f"No transcripts root at {root}.")
         return
