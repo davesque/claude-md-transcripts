@@ -13,7 +13,7 @@ JSONL file
   └─> render.py         records → markdown (frontmatter + body)
       └─> slug.py       deterministic filename slug from customTitle/heuristic
       └─> smart_slug.py optional live `claude -p` for LLM-generated titles
-  └─> sync.py           SyncOrchestrator: sync_session_dir, retitle_collection
+  └─> exporter.py       Exporter: export_session_dir, retitle
       └─> paths.py      host-path ↔ encoded session-dir mapping; default output-dir helpers
       └─> frontmatter.py minimal YAML-ish parser for our markdown frontmatter
   └─> cli.py            click-based commands: export, export-all, retitle, retitle-all, inspect
@@ -91,7 +91,7 @@ print(md[:1000])
 "
 ```
 
-To exercise the full export pipeline end-to-end without writing into your real output root, construct a `SyncOrchestrator` with `render_config=RenderConfig()` and pass an explicit `output_dir=tmp_path/'something'` to `sync_session_dir`. The retitle smoke pattern lives in `tests/test_retitle.py` and can be lifted for ad-hoc scripts.
+To exercise the full export pipeline end-to-end without writing into your real output root, construct an `Exporter` with `render_config=RenderConfig()` and pass an explicit `output_dir=tmp_path/'something'` to `export_session_dir`. The retitle smoke pattern lives in `tests/test_retitle.py` and can be lifted for ad-hoc scripts.
 
 ## Dependencies
 

@@ -1,7 +1,7 @@
 """
-Orchestrate end-to-end conversion of a session directory into a markdown collection.
+Orchestrate end-to-end conversion of a Claude Code session directory into markdown.
 
-The orchestrator wires together :mod:`reader`, :mod:`render`, :mod:`slug`,
+The exporter wires together :mod:`reader`, :mod:`render`, :mod:`slug`,
 and :mod:`paths`. It is constructed by injection so callers (CLI, tests,
 future schedulers) can swap out the render config or smart-slug generator
 without touching this module.
@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SyncResult:
+class ExportResult:
     """
-    Summary of a single sync run.
+    Summary of a single export run.
     """
 
     project_path: Path | None
@@ -55,9 +55,9 @@ class RetitleResult:
     renamed_paths: list[tuple[Path, Path]] = field(default_factory=list)
 
 
-class SyncOrchestrator:
+class Exporter:
     """
-    Convert a Claude Code session directory and write markdown files.
+    Convert a Claude Code session directory into markdown files on disk.
 
     Parameters
     ----------
@@ -66,7 +66,7 @@ class SyncOrchestrator:
     max_bytes
         Pass-through to the reader for skip-with-warn on huge files.
     smart_slug_generator
-        Optional generator used to derive LLM-assisted titles during sync.
+        Optional generator used to derive LLM-assisted titles during export.
     """
 
     def __init__(
@@ -80,26 +80,26 @@ class SyncOrchestrator:
         self.max_bytes = max_bytes
         self.smart_slug_generator = smart_slug_generator
 
-    def sync_host_project(
+    def export_host_project(
         self,
         host_path: Path,
         *,
         output_dir: Path | None = None,
-    ) -> SyncResult:
+    ) -> ExportResult:
         """
-        Sync a host project by resolving its Claude Code session directory.
+        Export a host project by resolving its Claude Code session directory.
         """
         session_dir = resolve_session_dir(host_path)
-        result = self.sync_session_dir(session_dir, output_dir=output_dir)
+        result = self.export_session_dir(session_dir, output_dir=output_dir)
         result.project_path = host_path.resolve()
         return result
 
-    def sync_session_dir(
+    def export_session_dir(
         self,
         session_dir: Path,
         *,
         output_dir: Path | None = None,
-    ) -> SyncResult:
+    ) -> ExportResult:
         """
         Convert all sessions in ``session_dir`` and write markdown to ``output_dir``.
 
@@ -108,7 +108,7 @@ class SyncOrchestrator:
         """
         out_dir = output_dir if output_dir is not None else default_output_dir_for(session_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        summary = SyncResult(
+        summary = ExportResult(
             project_path=None,
             session_dir=session_dir,
             output_dir=out_dir,
@@ -139,7 +139,7 @@ class SyncOrchestrator:
         self,
         jsonl_path: Path,
         out_dir: Path,
-        summary: SyncResult,
+        summary: ExportResult,
         *,
         index: int = 0,
         total: int = 0,
@@ -243,7 +243,7 @@ class SyncOrchestrator:
         # even if the first record's UUID isn't the session UUID.
         return build_filename(timestamp=timestamp, slug=slug, uuid=jsonl_path.stem)
 
-    def retitle_collection(
+    def retitle(
         self,
         output_dir: Path,
         *,
@@ -259,7 +259,7 @@ class SyncOrchestrator:
         the resulting slug differs.
         """
         if self.smart_slug_generator is None:
-            raise ValueError("retitle_collection requires a smart_slug_generator")
+            raise ValueError("retitle requires a smart_slug_generator")
         result = RetitleResult(output_dir=output_dir)
         if not output_dir.exists():
             logger.info("retitle: no output directory at %s, nothing to do", output_dir)

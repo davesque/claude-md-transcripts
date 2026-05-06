@@ -286,7 +286,7 @@ def test_retitle_all_with_explicit_empty_root(tmp_path: Path):
 def test_retitle_all_with_populated_root(tmp_path, monkeypatch):
     """retitle-all over a root with subdirs runs retitle_collection on each
     and prints a totals line."""
-    from claude_md_transcripts.sync import RetitleResult
+    from claude_md_transcripts.exporter import RetitleResult
 
     root = tmp_path / "transcripts-root"
     (root / "alpha").mkdir(parents=True)
@@ -305,7 +305,7 @@ def test_retitle_all_with_populated_root(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "claude_md_transcripts.sync.SyncOrchestrator.retitle_collection",
+        "claude_md_transcripts.exporter.Exporter.retitle",
         fake_retitle,
     )
 

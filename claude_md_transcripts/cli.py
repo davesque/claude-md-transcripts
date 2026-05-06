@@ -1,7 +1,7 @@
 """
 Command-line entry point for ``claude-md-transcripts``.
 
-Each subcommand wires up the existing :class:`SyncOrchestrator` (or the
+Each subcommand wires up the existing :class:`Exporter` (or the
 reader directly for ``inspect``) and prints a short summary.
 """
 
@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from .discovery import discover_projects
+from .exporter import Exporter, ExportResult, RetitleResult
 from .paths import (
     claude_projects_dir,
     default_output_dir_for,
@@ -25,17 +26,16 @@ from .picker import is_tty, pick_projects
 from .reader import DEFAULT_MAX_BYTES, read_session
 from .render import RenderConfig
 from .smart_slug import SmartSlugGenerator
-from .sync import SyncOrchestrator, SyncResult
 
 
-def _make_orchestrator(
+def _make_exporter(
     *, include_thinking: bool, max_bytes: int, smart_titles: bool = False
-) -> SyncOrchestrator:
+) -> Exporter:
     """
-    Construct a default orchestrator wired for direct markdown export.
+    Construct a default exporter wired for direct markdown export.
     """
     smart_gen = SmartSlugGenerator() if smart_titles else None
-    return SyncOrchestrator(
+    return Exporter(
         render_config=RenderConfig(include_thinking=include_thinking),
         max_bytes=max_bytes,
         smart_slug_generator=smart_gen,
@@ -52,7 +52,7 @@ def _make_orchestrator(
 )
 def cli(verbose: bool, quiet: bool) -> None:
     """
-    Convert Claude Code session JSONL transcripts to markdown collections.
+    Convert Claude Code session JSONL transcripts to clean markdown.
     """
     if verbose and quiet:
         raise click.UsageError("--verbose and --quiet cannot be combined.")
@@ -109,7 +109,7 @@ def export(
     With no positional path or ``--session-dir``, drops into an interactive
     multi-select for projects discovered under ``~/.claude/projects/``.
     """
-    orch = _make_orchestrator(
+    orch = _make_exporter(
         include_thinking=include_thinking,
         max_bytes=max_bytes,
         smart_titles=smart_titles,
@@ -130,18 +130,18 @@ def export(
         return
 
     if session_dir is not None:
-        result = orch.sync_session_dir(session_dir, output_dir=output_dir)
+        result = orch.export_session_dir(session_dir, output_dir=output_dir)
     else:
         assert host_path is not None
         try:
-            result = orch.sync_host_project(host_path, output_dir=output_dir)
+            result = orch.export_host_project(host_path, output_dir=output_dir)
         except FileNotFoundError as e:
             raise click.ClickException(str(e)) from e
 
     _print_export_summary(result)
 
 
-def _run_interactive_export(orch: SyncOrchestrator) -> None:
+def _run_interactive_export(orch: Exporter) -> None:
     """
     Discover projects, prompt the user to pick a subset, and export each one.
     """
@@ -158,11 +158,11 @@ def _run_interactive_export(orch: SyncOrchestrator) -> None:
         click.echo("Nothing selected.")
         return
 
-    results: list[SyncResult] = []
+    results: list[ExportResult] = []
     for info in selected:
         out_dir = default_output_dir_for(info.session_dir)
         click.echo(f"\n=== {info.basename} ({out_dir}) ===")
-        result = orch.sync_session_dir(info.session_dir, output_dir=out_dir)
+        result = orch.export_session_dir(info.session_dir, output_dir=out_dir)
         results.append(result)
         _print_export_summary(result, indent="  ")
 
@@ -213,7 +213,7 @@ def export_all(
     """
     Convert every Claude Code project directory under ~/.claude/projects/.
     """
-    orch = _make_orchestrator(
+    orch = _make_exporter(
         include_thinking=include_thinking,
         max_bytes=max_bytes,
         smart_titles=smart_titles,
@@ -230,7 +230,7 @@ def export_all(
     for d in project_dirs:
         out_dir = output_root / default_subdir_name(d)
         click.echo(f"\n→ {d.name}  ({out_dir})")
-        result = orch.sync_session_dir(d, output_dir=out_dir)
+        result = orch.export_session_dir(d, output_dir=out_dir)
         _print_export_summary(result, indent="  ")
         total["files_total"] += result.files_total
         total["files_converted"] += result.files_converted
@@ -268,12 +268,12 @@ def retitle(host_path: Path | None, output_dir: Path | None, force: bool) -> Non
         except FileNotFoundError as e:
             raise click.ClickException(str(e)) from e
         output_dir = default_output_dir_for(session_dir)
-    orch = _make_orchestrator(
+    orch = _make_exporter(
         include_thinking=False,
         max_bytes=DEFAULT_MAX_BYTES,
         smart_titles=True,
     )
-    result = orch.retitle_collection(output_dir, force=force)
+    result = orch.retitle(output_dir, force=force)
     _print_retitle_summary(result)
 
 
@@ -293,7 +293,7 @@ def retitle_all(output_dir: Path | None, force: bool) -> None:
     """
     Apply smart titles to every output directory under the export root.
     """
-    orch = _make_orchestrator(
+    orch = _make_exporter(
         include_thinking=False,
         max_bytes=DEFAULT_MAX_BYTES,
         smart_titles=True,
@@ -309,7 +309,7 @@ def retitle_all(output_dir: Path | None, force: bool) -> None:
     totals: collections.Counter[str] = collections.Counter()
     for d in coll_dirs:
         click.echo(f"\n→ {d.name}")
-        result = orch.retitle_collection(d, force=force)
+        result = orch.retitle(d, force=force)
         _print_retitle_summary(result, indent="  ")
         totals["files_total"] += result.files_total
         totals["files_retitled"] += result.files_retitled
@@ -347,9 +347,9 @@ def inspect(source: Path) -> None:
         click.echo(f"  {k}: {v}")
 
 
-def _print_export_summary(result, indent: str = "") -> None:
+def _print_export_summary(result: ExportResult, indent: str = "") -> None:
     """
-    Render a SyncResult to stdout in a one-glance format.
+    Render an ExportResult to stdout in a one-glance format.
     """
     click.echo(
         f"{indent}out={result.output_dir} "
@@ -361,7 +361,7 @@ def _print_export_summary(result, indent: str = "") -> None:
     )
 
 
-def _print_retitle_summary(result, indent: str = "") -> None:
+def _print_retitle_summary(result: RetitleResult, indent: str = "") -> None:
     """
     Render a RetitleResult to stdout.
     """

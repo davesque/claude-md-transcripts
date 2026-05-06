@@ -6,7 +6,7 @@ The slug fallback chain handled here:
 2. Heuristic from the first and last user prose messages.
 
 Smart-title generation lives in :mod:`smart_slug` and is composed by callers
-(typically :class:`SyncOrchestrator`), not by this module, so the basic
+(typically :class:`Exporter`), not by this module, so the basic
 fallback stays pure and side-effect-free.
 """
 

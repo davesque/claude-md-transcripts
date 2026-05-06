@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from claude_md_transcripts.exporter import Exporter
 from claude_md_transcripts.render import RenderConfig
-from claude_md_transcripts.sync import SyncOrchestrator
 
 
 def write_minimal_session(
@@ -61,14 +61,14 @@ def output_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def orchestrator() -> SyncOrchestrator:
-    return SyncOrchestrator(render_config=RenderConfig())
+def orchestrator() -> Exporter:
+    return Exporter(render_config=RenderConfig())
 
 
 def test_sync_writes_one_markdown_per_jsonl(
-    orchestrator: SyncOrchestrator, session_dir: Path, output_dir: Path
+    orchestrator: Exporter, session_dir: Path, output_dir: Path
 ):
-    result = orchestrator.sync_session_dir(session_dir, output_dir=output_dir)
+    result = orchestrator.export_session_dir(session_dir, output_dir=output_dir)
     assert result.files_total == 2
     assert result.files_converted == 2
     md_files = sorted(output_dir.glob("*.md"))
@@ -76,23 +76,23 @@ def test_sync_writes_one_markdown_per_jsonl(
 
 
 def test_sync_creates_output_dir(
-    orchestrator: SyncOrchestrator, session_dir: Path, output_dir: Path
+    orchestrator: Exporter, session_dir: Path, output_dir: Path
 ):
     assert not output_dir.exists()
-    orchestrator.sync_session_dir(session_dir, output_dir=output_dir)
+    orchestrator.export_session_dir(session_dir, output_dir=output_dir)
     assert output_dir.exists()
 
 
 def test_sync_idempotent_when_input_unchanged(session_dir: Path, output_dir: Path):
-    """Re-running sync without input changes does not re-render."""
-    orch1 = SyncOrchestrator(render_config=RenderConfig())
-    r1 = orch1.sync_session_dir(session_dir, output_dir=output_dir)
+    """Re-running export without input changes does not re-render."""
+    orch1 = Exporter(render_config=RenderConfig())
+    r1 = orch1.export_session_dir(session_dir, output_dir=output_dir)
 
     md_files = list(output_dir.glob("*.md"))
     initial_mtimes = {p: p.stat().st_mtime_ns for p in md_files}
 
-    orch2 = SyncOrchestrator(render_config=RenderConfig())
-    r2 = orch2.sync_session_dir(session_dir, output_dir=output_dir)
+    orch2 = Exporter(render_config=RenderConfig())
+    r2 = orch2.export_session_dir(session_dir, output_dir=output_dir)
 
     final_mtimes = {p: p.stat().st_mtime_ns for p in output_dir.glob("*.md")}
     assert initial_mtimes == final_mtimes
@@ -102,8 +102,8 @@ def test_sync_idempotent_when_input_unchanged(session_dir: Path, output_dir: Pat
 
 
 def test_sync_re_renders_when_input_newer(session_dir: Path, output_dir: Path):
-    orch = SyncOrchestrator(render_config=RenderConfig())
-    orch.sync_session_dir(session_dir, output_dir=output_dir)
+    orch = Exporter(render_config=RenderConfig())
+    orch.export_session_dir(session_dir, output_dir=output_dir)
     md_files = sorted(output_dir.glob("*.md"))
     assert md_files
 
@@ -111,7 +111,7 @@ def test_sync_re_renders_when_input_newer(session_dir: Path, output_dir: Path):
     new_mtime = target.stat().st_mtime + 100
     os.utime(target, (new_mtime, new_mtime))
 
-    r = orch.sync_session_dir(session_dir, output_dir=output_dir)
+    r = orch.export_session_dir(session_dir, output_dir=output_dir)
     assert r.files_converted == 1
     assert r.files_unchanged == 1
 
@@ -119,10 +119,10 @@ def test_sync_re_renders_when_input_newer(session_dir: Path, output_dir: Path):
 def test_sync_skips_oversized_file(session_dir: Path, output_dir: Path):
     big = session_dir / "33333333-3333-3333-3333-333333333333.jsonl"
     big.write_bytes(b"x" * 4096)  # not valid json, but the size guard fires first
-    orch = SyncOrchestrator(
+    orch = Exporter(
         render_config=RenderConfig(),
         max_bytes=2048,
     )
-    r = orch.sync_session_dir(session_dir, output_dir=output_dir)
+    r = orch.export_session_dir(session_dir, output_dir=output_dir)
     assert r.files_skipped_for_size == 1
     assert r.files_converted == 2
