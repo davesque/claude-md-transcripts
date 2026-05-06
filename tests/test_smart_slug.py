@@ -122,3 +122,42 @@ def test_generator_passes_timeout_to_runner():
     gen = SmartSlugGenerator(runner=runner, timeout=42.0)
     gen.generate("md")
     assert runner.calls[0]["timeout"] == 42.0
+
+
+def test_generator_disables_session_persistence():
+    """Smart-title calls must not pollute project session dirs with meta-sessions."""
+    runner = FakeRunner(FakeRun(stdout="ok\n"))
+    gen = SmartSlugGenerator(runner=runner)
+    gen.generate("md")
+    args = runner.calls[0]["args"]
+    assert "--no-session-persistence" in args
+
+
+def test_generator_disables_slash_commands_and_tools():
+    """Skill loading and tool registration are not needed for summarization."""
+    runner = FakeRunner(FakeRun(stdout="ok\n"))
+    gen = SmartSlugGenerator(runner=runner)
+    gen.generate("md")
+    args = runner.calls[0]["args"]
+    assert "--disable-slash-commands" in args
+    # --tools "" disables all tools
+    tools_idx = args.index("--tools")
+    assert args[tools_idx + 1] == ""
+
+
+def test_generator_uses_bare_when_api_key_set(monkeypatch):
+    """--bare cuts CLAUDE.md / hook / plugin overhead but only works with API key auth."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+    runner = FakeRunner(FakeRun(stdout="ok\n"))
+    gen = SmartSlugGenerator(runner=runner)
+    gen.generate("md")
+    assert "--bare" in runner.calls[0]["args"]
+
+
+def test_generator_skips_bare_when_api_key_unset(monkeypatch):
+    """OAuth-only users must not get --bare (it would fail to authenticate)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    runner = FakeRunner(FakeRun(stdout="ok\n"))
+    gen = SmartSlugGenerator(runner=runner)
+    gen.generate("md")
+    assert "--bare" not in runner.calls[0]["args"]

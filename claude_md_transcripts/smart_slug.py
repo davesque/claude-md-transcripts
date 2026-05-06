@@ -11,6 +11,7 @@ output) all return ``None`` so callers can fall back to the heuristic slug.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 from collections.abc import Callable
 from typing import Any
@@ -91,7 +92,26 @@ class SmartSlugGenerator:
         """
         sample = self._build_sample(markdown)
         prompt = _PROMPT.format(sample=sample)
-        argv: list[str] = [self.binary, "-p"]
+        argv: list[str] = [
+            self.binary,
+            "-p",
+            # Don't write a JSONL session for this one-turn call. Without
+            # this, every smart-title invocation pollutes the project's
+            # session directory with a meta-session that the next export
+            # would render as a noise transcript.
+            "--no-session-persistence",
+            # Skip skill loading — summarization needs no skills.
+            "--disable-slash-commands",
+            # Disable tools — summarization needs no tools.
+            "--tools",
+            "",
+        ]
+        # --bare additionally skips CLAUDE.md auto-discovery, hooks, plugin
+        # sync, and auto-memory, but only works when the user authenticates
+        # via ANTHROPIC_API_KEY (OAuth/keychain are ignored under --bare).
+        # Opt in only when the env var is present so OAuth users keep working.
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            argv.append("--bare")
         if self.model:
             argv += ["--model", self.model]
         argv.append(prompt)
