@@ -281,3 +281,37 @@ def test_retitle_all_with_explicit_empty_root(tmp_path: Path):
     result = runner.invoke(cli, ["retitle-all", "--output-dir", str(empty_root)])
     assert result.exit_code == 0
     assert "No subdirectories found" in result.output
+
+
+def test_retitle_all_with_populated_root(tmp_path, monkeypatch):
+    """retitle-all over a root with subdirs runs retitle_collection on each
+    and prints a totals line."""
+    from claude_md_transcripts.sync import RetitleResult
+
+    root = tmp_path / "transcripts-root"
+    (root / "alpha").mkdir(parents=True)
+    (root / "beta").mkdir(parents=True)
+    (root / "alpha" / "doc.md").write_text("---\nsession_id: a\n---\nbody\n")
+    (root / "beta" / "doc.md").write_text("---\nsession_id: b\n---\nbody\n")
+
+    calls: list = []
+
+    def fake_retitle(self, output_dir, *, force=False):
+        calls.append((Path(output_dir), force))
+        return RetitleResult(
+            output_dir=output_dir,
+            files_total=1,
+            files_retitled=1,
+        )
+
+    monkeypatch.setattr(
+        "claude_md_transcripts.sync.SyncOrchestrator.retitle_collection",
+        fake_retitle,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["retitle-all", "--output-dir", str(root)])
+    assert result.exit_code == 0, result.output
+    assert "Totals" in result.output
+    assert "retitled=2" in result.output
+    assert {c[0].name for c in calls} == {"alpha", "beta"}

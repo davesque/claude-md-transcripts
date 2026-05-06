@@ -87,6 +87,11 @@ def default_subdir_name(session_dir: Path) -> str:
 
     The encoded directory ``-Users-foo-projects-qmd`` becomes ``qmd``.
     Falls back to ``"unknown"`` if no usable basename can be extracted.
+
+    Note that this is a best-effort extraction. Claude Code's path encoding
+    is lossy (both ``/`` and ``.`` map to ``-``), so a host path like
+    ``/work/my-tool`` produces ``tool``, not ``my-tool``. Pass an explicit
+    ``--output-dir`` to the CLI if you need a specific subdirectory name.
     """
     name = session_dir.name.lstrip("-")
     basename = name.rsplit("-", 1)[-1] if "-" in name else name

@@ -97,6 +97,8 @@ claude-md-transcripts export HOST_PATH [OPTIONS]
 claude-md-transcripts export --session-dir DIR [OPTIONS]
 ```
 
+If neither `HOST_PATH` nor `--session-dir` is given, the command drops into an interactive checklist of every project found under `~/.claude/projects/`. Each selected project is exported into its own default subdirectory under `~/.claude/claude-md-transcripts/<basename>/`. Boolean flags (`--include-thinking`, `--smart-titles`) apply to every selected project. `--output-dir` is rejected in interactive mode because it would apply to every project.
+
 Options:
 
 | Option | Description |

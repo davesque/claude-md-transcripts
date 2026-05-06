@@ -32,7 +32,6 @@ class SyncResult:
 
     project_path: Path | None
     session_dir: Path
-    collection: str
     output_dir: Path
     files_total: int = 0
     files_converted: int = 0
@@ -112,13 +111,12 @@ class SyncOrchestrator:
         summary = SyncResult(
             project_path=None,
             session_dir=session_dir,
-            collection=out_dir.name,
             output_dir=out_dir,
         )
 
         jsonl_paths = sorted(session_dir.glob("*.jsonl"))
         logger.info(
-            "sync: scanning %s -> %s (%d session files)",
+            "export: scanning %s -> %s (%d session files)",
             session_dir,
             out_dir,
             len(jsonl_paths),
@@ -128,7 +126,7 @@ class SyncOrchestrator:
             self._convert_one(jsonl_path, out_dir, summary, index=i, total=len(jsonl_paths))
 
         logger.info(
-            "sync: done %s (converted=%d, unchanged=%d, skipped_for_size=%d, skipped_empty=%d)",
+            "export: done %s (converted=%d, unchanged=%d, skipped_for_size=%d, skipped_empty=%d)",
             out_dir,
             summary.files_converted,
             summary.files_unchanged,
