@@ -8,7 +8,6 @@ from claude_md_transcripts.paths import (
     default_output_root,
     default_subdir_name,
     encode_host_path,
-    output_dir_for_collection,
     resolve_session_dir,
 )
 
@@ -61,11 +60,6 @@ def test_resolve_session_dir_raises_when_missing(tmp_path):
     fake.mkdir()
     with pytest.raises(FileNotFoundError):
         resolve_session_dir(fake)
-
-
-def test_output_dir_for_collection():
-    out = output_dir_for_collection("my-collection")
-    assert out == Path.home() / ".claude" / "qmd-transcripts" / "my-collection"
 
 
 def test_default_output_root_returns_claude_md_transcripts_dir():

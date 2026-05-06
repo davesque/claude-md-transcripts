@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from claude_md_transcripts.render import RenderConfig
-from claude_md_transcripts.sync import SyncOrchestrator, default_collection_name
+from claude_md_transcripts.sync import SyncOrchestrator
 
 
 def write_minimal_session(
@@ -63,17 +63,6 @@ def output_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def orchestrator() -> SyncOrchestrator:
     return SyncOrchestrator(render_config=RenderConfig())
-
-
-def test_default_collection_name_derived_from_session_dir():
-    sd = Path("/some/where/-Users-david-sanders-projects-qmd")
-    assert default_collection_name(sd) == "qmd-claude-sessions"
-
-
-def test_default_collection_name_handles_short_paths(tmp_path):
-    sd = tmp_path / "-foo"
-    sd.mkdir()
-    assert default_collection_name(sd) == "foo-claude-sessions"
 
 
 def test_sync_writes_one_markdown_per_jsonl(

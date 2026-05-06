@@ -70,13 +70,6 @@ def resolve_session_dir(host_path: Path) -> Path:
     return candidate
 
 
-def output_dir_for_collection(collection: str) -> Path:
-    """
-    Return the markdown output directory for a given collection name.
-    """
-    return Path.home() / ".claude" / "qmd-transcripts" / collection
-
-
 def default_output_root() -> Path:
     """
     Return the default root directory for exported markdown.

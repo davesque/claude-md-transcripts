@@ -24,20 +24,6 @@ from .smart_slug import SmartSlugGenerator
 logger = logging.getLogger(__name__)
 
 
-def default_collection_name(session_dir: Path) -> str:
-    """
-    Derive a sensible collection name from a Claude Code session directory.
-
-    The encoded directory ``-Users-foo-projects-qmd`` becomes
-    ``qmd-claude-sessions``. The ``-claude-sessions`` suffix disambiguates
-    transcript collections from other qmd collections that may share a name
-    with the project basename.
-    """
-    name = session_dir.name.lstrip("-")
-    basename = name.rsplit("-", 1)[-1] if "-" in name else name
-    return f"{basename or 'unknown'}-claude-sessions"
-
-
 @dataclass
 class SyncResult:
     """
@@ -62,7 +48,6 @@ class RetitleResult:
     Summary of a single retitle pass.
     """
 
-    collection: str
     output_dir: Path
     files_total: int = 0
     files_retitled: int = 0
@@ -277,7 +262,7 @@ class SyncOrchestrator:
         """
         if self.smart_slug_generator is None:
             raise ValueError("retitle_collection requires a smart_slug_generator")
-        result = RetitleResult(collection=output_dir.name, output_dir=output_dir)
+        result = RetitleResult(output_dir=output_dir)
         if not output_dir.exists():
             logger.info("retitle: no output directory at %s, nothing to do", output_dir)
             return result
