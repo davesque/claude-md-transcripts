@@ -1,9 +1,8 @@
 """
 Command-line entry point for ``claude-md-transcripts``.
 
-The CLI is intentionally thin: each subcommand wires up the existing
-:class:`SyncOrchestrator` (or the reader directly for ``inspect``) and
-prints a short summary.
+Each subcommand wires up the existing :class:`SyncOrchestrator` (or the
+reader directly for ``inspect``) and prints a short summary.
 """
 
 from __future__ import annotations
@@ -14,13 +13,18 @@ from pathlib import Path
 
 import click
 
-from .discovery import ProjectInfo, discover_projects
-from .paths import claude_projects_dir, default_output_root, resolve_session_dir
+from .discovery import discover_projects
+from .paths import (
+    claude_projects_dir,
+    default_output_dir_for,
+    default_output_root,
+    resolve_session_dir,
+)
 from .picker import is_tty, pick_projects
 from .reader import DEFAULT_MAX_BYTES, read_session
 from .render import RenderConfig
 from .smart_slug import SmartSlugGenerator
-from .sync import SyncOrchestrator, SyncResult, default_collection_name
+from .sync import SyncOrchestrator, SyncResult
 
 
 def _make_orchestrator(
@@ -35,18 +39,6 @@ def _make_orchestrator(
         max_bytes=max_bytes,
         smart_slug_generator=smart_gen,
     )
-
-
-def _resolve_collection_name(host_path: Path | None, collection: str | None) -> str:
-    """
-    Pick the collection name from either ``--collection`` or a host path.
-    """
-    if collection:
-        return collection
-    if host_path is None:
-        raise click.UsageError("Provide either HOST_PATH or --collection.")
-    session_dir = resolve_session_dir(host_path)
-    return default_collection_name(session_dir)
 
 
 @click.group()
@@ -83,8 +75,12 @@ def cli(verbose: bool, quiet: bool) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Operate on this Claude Code session directory directly (skips host-path resolution).",
 )
-@click.option("--collection", help="qmd collection name (defaults to <project>-claude-sessions).")
-@click.option("--description", help="Description attached as qmd context for the collection.")
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Where to write markdown for this run "
+    "(default: ~/.claude/claude-md-transcripts/<basename>/).",
+)
 @click.option("--include-thinking", is_flag=True, help="Include assistant 'thinking' blocks.")
 @click.option(
     "--smart-titles",
@@ -98,17 +94,16 @@ def cli(verbose: bool, quiet: bool) -> None:
     show_default=True,
     help="Skip session files larger than this many bytes.",
 )
-def sync(
+def export(
     host_path: Path | None,
     session_dir: Path | None,
-    collection: str | None,
-    description: str | None,
+    output_dir: Path | None,
     include_thinking: bool,
     smart_titles: bool,
     max_bytes: int,
 ) -> None:
     """
-    Convert one or more host projects' sessions and register them with qmd.
+    Convert a host project's Claude Code sessions to markdown.
 
     With no positional path or ``--session-dir``, drops into an interactive
     multi-select for projects discovered under ``~/.claude/projects/``.
@@ -120,60 +115,39 @@ def sync(
     )
 
     if host_path is None and session_dir is None:
+        if output_dir is not None:
+            raise click.UsageError(
+                "--output-dir cannot be combined with interactive mode "
+                "(it would apply to every selected project). "
+                "Pass HOST_PATH or --session-dir to use --output-dir."
+            )
         if not is_tty():
             raise click.UsageError(
                 "Provide HOST_PATH or --session-dir, or run interactively in a terminal."
             )
-        _run_interactive_sync(orch, collection=collection, description=description)
+        _run_interactive_export(orch)
         return
 
-    if collection is None and host_path is None and session_dir is not None:
-        # Permit defaulting from the session dir.
-        pass
-
     if session_dir is not None:
-        result = orch.sync_session_dir(session_dir, collection=collection, description=description)
+        result = orch.sync_session_dir(session_dir, output_dir=output_dir)
     else:
         assert host_path is not None
         try:
-            result = orch.sync_host_project(
-                host_path, collection=collection, description=description
-            )
+            result = orch.sync_host_project(host_path, output_dir=output_dir)
         except FileNotFoundError as e:
             raise click.ClickException(str(e)) from e
 
-    _print_sync_summary(result)
+    _print_export_summary(result)
 
 
-def _run_interactive_sync(
-    orch: SyncOrchestrator,
-    *,
-    collection: str | None,
-    description: str | None,
-) -> None:
+def _run_interactive_export(orch: SyncOrchestrator) -> None:
     """
-    Discover projects, prompt the user to pick a subset, and sync each one.
-
-    Boolean flags from the CLI (``--include-thinking``, ``--smart-titles``,
-    ``--max-bytes``) are already baked into ``orch``. Per-project collection
-    names and descriptions are auto-derived from each project's basename
-    unless the user explicitly passed ``--collection`` or ``--description``
-    (in which case they're applied uniformly to every selection, which is
-    almost certainly not what they want and gets a warning).
+    Discover projects, prompt the user to pick a subset, and export each one.
     """
     projects = discover_projects(claude_projects_dir())
     if not projects:
         click.echo(f"No project directories found under {claude_projects_dir()}.")
         return
-
-    if collection is not None or description is not None:
-        click.echo(
-            "Note: --collection / --description override the per-project defaults "
-            "and will apply to every selected project. Skip those flags to get the "
-            "default '<basename>-claude-sessions' collection and "
-            "'Claude Code session transcripts for <basename>' description.",
-            err=True,
-        )
 
     selected = pick_projects(projects)
     if selected is None:
@@ -185,14 +159,11 @@ def _run_interactive_sync(
 
     results: list[SyncResult] = []
     for info in selected:
-        coll = collection or _default_collection_for(info)
-        desc = description or _default_description_for(info)
-        click.echo(f"\n=== {info.basename} ({coll}) ===")
-        result = orch.sync_session_dir(
-            info.session_dir, collection=coll, description=desc
-        )
+        out_dir = default_output_dir_for(info.session_dir)
+        click.echo(f"\n=== {info.basename} ({out_dir}) ===")
+        result = orch.sync_session_dir(info.session_dir, output_dir=out_dir)
         results.append(result)
-        _print_sync_summary(result, indent="  ")
+        _print_export_summary(result, indent="  ")
 
     if len(results) > 1:
         totals = {
@@ -213,21 +184,12 @@ def _run_interactive_sync(
         )
 
 
-def _default_collection_for(info: ProjectInfo) -> str:
-    """
-    Default collection name for an interactively selected project.
-    """
-    return f"{info.basename}-claude-sessions"
-
-
-def _default_description_for(info: ProjectInfo) -> str:
-    """
-    Default qmd context description for an interactively selected project.
-    """
-    return f"Claude Code session transcripts for {info.basename}"
-
-
-@cli.command("sync-all")
+@cli.command("export-all")
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output root for all projects (default: ~/.claude/claude-md-transcripts/).",
+)
 @click.option("--include-thinking", is_flag=True, help="Include assistant 'thinking' blocks.")
 @click.option(
     "--smart-titles",
@@ -241,7 +203,12 @@ def _default_description_for(info: ProjectInfo) -> str:
     show_default=True,
     help="Skip session files larger than this many bytes.",
 )
-def sync_all(include_thinking: bool, smart_titles: bool, max_bytes: int) -> None:
+def export_all(
+    output_dir: Path | None,
+    include_thinking: bool,
+    smart_titles: bool,
+    max_bytes: int,
+) -> None:
     """
     Convert every Claude Code project directory under ~/.claude/projects/.
     """
@@ -257,12 +224,13 @@ def sync_all(include_thinking: bool, smart_titles: bool, max_bytes: int) -> None
     if not project_dirs:
         click.echo("No project directories found.")
         return
-    total = collections.Counter()
+    output_root = output_dir if output_dir is not None else default_output_root()
+    total: collections.Counter[str] = collections.Counter()
     for d in project_dirs:
-        coll = default_collection_name(d)
-        click.echo(f"\n→ {d.name}  ({coll})")
-        result = orch.sync_session_dir(d, collection=coll)
-        _print_sync_summary(result, indent="  ")
+        out_dir = output_root / _subdir_for(d)
+        click.echo(f"\n→ {d.name}  ({out_dir})")
+        result = orch.sync_session_dir(d, output_dir=out_dir)
+        _print_export_summary(result, indent="  ")
         total["files_total"] += result.files_total
         total["files_converted"] += result.files_converted
         total["files_unchanged"] += result.files_unchanged
@@ -275,63 +243,81 @@ def sync_all(include_thinking: bool, smart_titles: bool, max_bytes: int) -> None
     )
 
 
+def _subdir_for(session_dir: Path) -> str:
+    """
+    Compute the per-project subdir name for export-all.
+    """
+    from .paths import default_subdir_name
+
+    return default_subdir_name(session_dir)
+
+
 @cli.command()
 @click.argument("host_path", required=False, type=click.Path(file_okay=False, path_type=Path))
-@click.option("--collection", help="Collection name (defaults to <project>-claude-sessions).")
+@click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output directory to retitle (default: derived from HOST_PATH).",
+)
 @click.option(
     "--force",
     is_flag=True,
     help="Retitle even files that already carry smart_title: true in their frontmatter.",
 )
-def retitle(host_path: Path | None, collection: str | None, force: bool) -> None:
+def retitle(host_path: Path | None, output_dir: Path | None, force: bool) -> None:
     """
-    Apply smart titles to a previously-synced collection.
-
-    Walks the collection's output directory and asks ``claude -p`` for a
-    summary title for every transcript that doesn't already have one.
-    Pass ``--force`` to refresh titles that were generated previously.
+    Apply smart titles to a previously-exported output directory.
     """
-    try:
-        coll_name = _resolve_collection_name(host_path, collection)
-    except FileNotFoundError as e:
-        raise click.ClickException(str(e)) from e
+    if output_dir is None:
+        if host_path is None:
+            raise click.UsageError("Provide either HOST_PATH or --output-dir.")
+        try:
+            session_dir = resolve_session_dir(host_path)
+        except FileNotFoundError as e:
+            raise click.ClickException(str(e)) from e
+        output_dir = default_output_dir_for(session_dir)
     orch = _make_orchestrator(
         include_thinking=False,
         max_bytes=DEFAULT_MAX_BYTES,
         smart_titles=True,
     )
-    result = orch.retitle_collection(coll_name, force=force)
+    result = orch.retitle_collection(output_dir, force=force)
     _print_retitle_summary(result)
 
 
 @cli.command("retitle-all")
 @click.option(
+    "--output-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Output root to walk for subdirs to retitle "
+    "(default: ~/.claude/claude-md-transcripts/).",
+)
+@click.option(
     "--force",
     is_flag=True,
     help="Retitle even files that already carry smart_title: true in their frontmatter.",
 )
-def retitle_all(force: bool) -> None:
+def retitle_all(output_dir: Path | None, force: bool) -> None:
     """
-    Apply smart titles to every collection under ~/.claude/claude-md-transcripts/.
+    Apply smart titles to every output directory under the export root.
     """
     orch = _make_orchestrator(
         include_thinking=False,
         max_bytes=DEFAULT_MAX_BYTES,
         smart_titles=True,
     )
-    root = default_output_root()
+    root = output_dir if output_dir is not None else default_output_root()
     if not root.exists():
         click.echo(f"No transcripts root at {root}.")
         return
     coll_dirs = sorted(p for p in root.iterdir() if p.is_dir())
     if not coll_dirs:
-        click.echo("No collections found.")
+        click.echo("No subdirectories found.")
         return
     totals: collections.Counter[str] = collections.Counter()
     for d in coll_dirs:
-        coll = d.name
-        click.echo(f"\n→ {coll}")
-        result = orch.retitle_collection(coll, force=force)
+        click.echo(f"\n→ {d.name}")
+        result = orch.retitle_collection(d, force=force)
         _print_retitle_summary(result, indent="  ")
         totals["files_total"] += result.files_total
         totals["files_retitled"] += result.files_retitled
@@ -369,13 +355,12 @@ def inspect(source: Path) -> None:
         click.echo(f"  {k}: {v}")
 
 
-def _print_sync_summary(result, indent: str = "") -> None:
+def _print_export_summary(result, indent: str = "") -> None:
     """
     Render a SyncResult to stdout in a one-glance format.
     """
     click.echo(
-        f"{indent}collection={result.collection} "
-        f"out={result.output_dir} "
+        f"{indent}out={result.output_dir} "
         f"total={result.files_total} "
         f"converted={result.files_converted} "
         f"unchanged={result.files_unchanged} "
@@ -389,8 +374,7 @@ def _print_retitle_summary(result, indent: str = "") -> None:
     Render a RetitleResult to stdout.
     """
     click.echo(
-        f"{indent}collection={result.collection} "
-        f"out={result.output_dir} "
+        f"{indent}out={result.output_dir} "
         f"total={result.files_total} "
         f"retitled={result.files_retitled} "
         f"already_smart={result.files_skipped_already_smart} "

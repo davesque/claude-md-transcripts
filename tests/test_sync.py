@@ -61,11 +61,8 @@ def output_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def orchestrator(output_dir: Path) -> SyncOrchestrator:
-    return SyncOrchestrator(
-        render_config=RenderConfig(),
-        output_root=output_dir.parent,
-    )
+def orchestrator() -> SyncOrchestrator:
+    return SyncOrchestrator(render_config=RenderConfig())
 
 
 def test_default_collection_name_derived_from_session_dir():
@@ -82,7 +79,7 @@ def test_default_collection_name_handles_short_paths(tmp_path):
 def test_sync_writes_one_markdown_per_jsonl(
     orchestrator: SyncOrchestrator, session_dir: Path, output_dir: Path
 ):
-    result = orchestrator.sync_session_dir(session_dir, collection="test-collection")
+    result = orchestrator.sync_session_dir(session_dir, output_dir=output_dir)
     assert result.files_total == 2
     assert result.files_converted == 2
     md_files = sorted(output_dir.glob("*.md"))
@@ -93,20 +90,20 @@ def test_sync_creates_output_dir(
     orchestrator: SyncOrchestrator, session_dir: Path, output_dir: Path
 ):
     assert not output_dir.exists()
-    orchestrator.sync_session_dir(session_dir, collection="test-collection")
+    orchestrator.sync_session_dir(session_dir, output_dir=output_dir)
     assert output_dir.exists()
 
 
 def test_sync_idempotent_when_input_unchanged(session_dir: Path, output_dir: Path):
     """Re-running sync without input changes does not re-render."""
-    orch1 = SyncOrchestrator(render_config=RenderConfig(), output_root=output_dir.parent)
-    r1 = orch1.sync_session_dir(session_dir, collection="test-collection")
+    orch1 = SyncOrchestrator(render_config=RenderConfig())
+    r1 = orch1.sync_session_dir(session_dir, output_dir=output_dir)
 
     md_files = list(output_dir.glob("*.md"))
     initial_mtimes = {p: p.stat().st_mtime_ns for p in md_files}
 
-    orch2 = SyncOrchestrator(render_config=RenderConfig(), output_root=output_dir.parent)
-    r2 = orch2.sync_session_dir(session_dir, collection="test-collection")
+    orch2 = SyncOrchestrator(render_config=RenderConfig())
+    r2 = orch2.sync_session_dir(session_dir, output_dir=output_dir)
 
     final_mtimes = {p: p.stat().st_mtime_ns for p in output_dir.glob("*.md")}
     assert initial_mtimes == final_mtimes
@@ -116,8 +113,8 @@ def test_sync_idempotent_when_input_unchanged(session_dir: Path, output_dir: Pat
 
 
 def test_sync_re_renders_when_input_newer(session_dir: Path, output_dir: Path):
-    orch = SyncOrchestrator(render_config=RenderConfig(), output_root=output_dir.parent)
-    orch.sync_session_dir(session_dir, collection="test-collection")
+    orch = SyncOrchestrator(render_config=RenderConfig())
+    orch.sync_session_dir(session_dir, output_dir=output_dir)
     md_files = sorted(output_dir.glob("*.md"))
     assert md_files
 
@@ -125,7 +122,7 @@ def test_sync_re_renders_when_input_newer(session_dir: Path, output_dir: Path):
     new_mtime = target.stat().st_mtime + 100
     os.utime(target, (new_mtime, new_mtime))
 
-    r = orch.sync_session_dir(session_dir, collection="test-collection")
+    r = orch.sync_session_dir(session_dir, output_dir=output_dir)
     assert r.files_converted == 1
     assert r.files_unchanged == 1
 
@@ -135,9 +132,8 @@ def test_sync_skips_oversized_file(session_dir: Path, output_dir: Path):
     big.write_bytes(b"x" * 4096)  # not valid json, but the size guard fires first
     orch = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_dir.parent,
         max_bytes=2048,
     )
-    r = orch.sync_session_dir(session_dir, collection="test-collection")
+    r = orch.sync_session_dir(session_dir, output_dir=output_dir)
     assert r.files_skipped_for_size == 1
     assert r.files_converted == 2

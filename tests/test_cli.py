@@ -36,54 +36,51 @@ def test_inspect_reports_summary(tmp_path: Path):
     assert "skipped" in result.output
 
 
-def test_sync_reports_summary(tmp_path: Path, monkeypatch):
-    """End-to-end sync, with qmd subprocess stubbed via env."""
-    # Build a fake claude-projects dir and point the orchestrator at it.
-    claude_root = tmp_path / "claude-projects"
-    encoded = claude_root / "-fake-host-project"
+def test_export_with_session_dir_and_explicit_output_dir(tmp_path: Path):
+    encoded = tmp_path / "claude-projects" / "-fake-host-project"
     encoded.mkdir(parents=True)
     _write_minimal_session(encoded / "11111111-1111-1111-1111-111111111111.jsonl")
 
-    # Redirect Path.home so paths.resolve_session_dir / output_dir_for_collection
-    # both land under tmp_path.
-    fake_home = tmp_path / "home"
-    (fake_home / ".claude" / "projects").mkdir(parents=True)
-    # Symlink the fake encoded dir into the fake home so resolve_session_dir finds it.
-    target = fake_home / ".claude" / "projects" / "-fake-host-project"
-    target.symlink_to(encoded)
+    out_dir = tmp_path / "exports" / "test-out"
 
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
-
-    # Stub QmdClient via env-controlled fake binary
-    fake_qmd = tmp_path / "fake-qmd.sh"
-    fake_qmd.write_text("#!/bin/sh\nexit 0\n")
-    fake_qmd.chmod(0o755)
-
-    monkeypatch.setenv("CLAUDE_MD_TRANSCRIPTS_QMD_BIN", str(fake_qmd))
-
-    # session_dir = encoded; pass it directly via --session-dir to avoid host_path mapping
     runner = CliRunner()
     result = runner.invoke(
         cli,
-        [
-            "sync",
-            "--session-dir",
-            str(encoded),
-            "--collection",
-            "test-coll",
-            "--description",
-            "Test",
-        ],
+        ["export", "--session-dir", str(encoded), "--output-dir", str(out_dir)],
     )
     assert result.exit_code == 0, result.output
-    assert "test-coll" in result.output
     assert "converted" in result.output.lower()
-    out_dir = fake_home / ".claude" / "qmd-transcripts" / "test-coll"
     assert out_dir.exists()
     assert any(out_dir.glob("*.md"))
 
 
-def test_sync_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
+def test_export_with_host_path_uses_default_output_dir(tmp_path: Path, monkeypatch):
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+    encoded_name = "-Users-fake-projects-foo"
+    d = proj_dir / encoded_name
+    d.mkdir()
+    _write_minimal_session(d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl")
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    # Symlink so resolve_session_dir matches encode_host_path of HOST_PATH.
+    host_path = tmp_path / "Users" / "fake" / "projects" / "foo"
+    host_path.mkdir(parents=True)
+    encoded_for_host = "-" + str(host_path).replace("/", "-").replace(".", "-").lstrip("-")
+    (proj_dir / encoded_for_host).symlink_to(d)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export", str(host_path)])
+    assert result.exit_code == 0, result.output
+
+    expected_out = fake_home / ".claude" / "claude-md-transcripts" / "foo"
+    assert expected_out.exists()
+    assert any(expected_out.glob("*.md"))
+
+
+def test_export_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
     fake_home = tmp_path / "home"
     proj_dir = fake_home / ".claude" / "projects"
     proj_dir.mkdir(parents=True)
@@ -98,41 +95,70 @@ def test_sync_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
-    fake_qmd = tmp_path / "fake-qmd.sh"
-    fake_qmd.write_text("#!/bin/sh\nexit 0\n")
-    fake_qmd.chmod(0o755)
-    monkeypatch.setenv("CLAUDE_MD_TRANSCRIPTS_QMD_BIN", str(fake_qmd))
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export-all"])
+    assert result.exit_code == 0, result.output
+    assert "foo" in result.output
+    assert "bar" in result.output
+
+    out_root = fake_home / ".claude" / "claude-md-transcripts"
+    assert (out_root / "foo").exists()
+    assert (out_root / "bar").exists()
+
+
+def test_export_all_with_explicit_output_root(tmp_path: Path, monkeypatch):
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+    d = proj_dir / "-Users-fake-projects-foo"
+    d.mkdir()
+    _write_minimal_session(d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    custom_root = tmp_path / "custom"
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["sync-all"])
+    result = runner.invoke(cli, ["export-all", "--output-dir", str(custom_root)])
     assert result.exit_code == 0, result.output
-    assert "foo-claude-sessions" in result.output
-    assert "bar-claude-sessions" in result.output
 
-    out_root = fake_home / ".claude" / "qmd-transcripts"
-    assert (out_root / "foo-claude-sessions").exists()
-    assert (out_root / "bar-claude-sessions").exists()
+    assert (custom_root / "foo").exists()
+    assert any((custom_root / "foo").glob("*.md"))
 
 
-def test_help_lists_subcommands():
+def test_help_lists_renamed_subcommands():
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("sync", "sync-all", "inspect"):
+    for cmd in ("export", "export-all", "retitle", "retitle-all", "inspect"):
         assert cmd in result.output
+    assert "sync" not in result.output
 
 
-def test_sync_without_args_in_non_tty_raises_usage_error():
-    """When stdin/stdout aren't TTYs, sync without HOST_PATH refuses to run."""
+def test_export_without_args_in_non_tty_raises_usage_error():
+    """When stdin/stdout aren't TTYs, export without HOST_PATH refuses to run."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["sync"])
+    result = runner.invoke(cli, ["export"])
     assert result.exit_code != 0
     assert "HOST_PATH" in result.output or "session-dir" in result.output
 
 
-def test_sync_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
-    """With no positional path, the sync command drops into the picker and
-    syncs each selected project with auto-derived collection/description."""
+def test_export_rejects_output_dir_in_interactive_mode(tmp_path: Path, monkeypatch):
+    """Passing --output-dir with no HOST_PATH/--session-dir is a usage error."""
+    fake_home = tmp_path / "home"
+    (fake_home / ".claude" / "projects").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    import claude_md_transcripts.cli as cli_module
+
+    monkeypatch.setattr(cli_module, "is_tty", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export", "--output-dir", str(tmp_path / "out")])
+    assert result.exit_code != 0
+    assert "output-dir" in result.output.lower()
+
+
+def test_export_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
     fake_home = tmp_path / "home"
     proj_dir = fake_home / ".claude" / "projects"
     proj_dir.mkdir(parents=True)
@@ -146,12 +172,6 @@ def test_sync_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
-    fake_qmd = tmp_path / "fake-qmd.sh"
-    fake_qmd.write_text("#!/bin/sh\nexit 0\n")
-    fake_qmd.chmod(0o755)
-    monkeypatch.setenv("CLAUDE_MD_TRANSCRIPTS_QMD_BIN", str(fake_qmd))
-
-    # Pretend stdin/stdout are TTYs and stub the picker to select both.
     import claude_md_transcripts.cli as cli_module
 
     monkeypatch.setattr(cli_module, "is_tty", lambda: True)
@@ -165,21 +185,19 @@ def test_sync_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(cli_module, "pick_projects", fake_pick_projects)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["sync"])
+    result = runner.invoke(cli, ["export"])
     assert result.exit_code == 0, result.output
 
-    # Both projects were offered to the picker
     basenames = {p.basename for p in captured["projects"]}
     assert {"foo", "bar"} <= basenames
 
-    # Both got synced and produced output
-    out_root = fake_home / ".claude" / "qmd-transcripts"
-    assert (out_root / "foo-claude-sessions").exists()
-    assert (out_root / "bar-claude-sessions").exists()
+    out_root = fake_home / ".claude" / "claude-md-transcripts"
+    assert (out_root / "foo").exists()
+    assert (out_root / "bar").exists()
     assert "Totals across 2 projects" in result.output
 
 
-def test_sync_interactive_cancel_prints_cancelled(tmp_path: Path, monkeypatch):
+def test_export_interactive_cancel_prints_cancelled(tmp_path: Path, monkeypatch):
     fake_home = tmp_path / "home"
     proj_dir = fake_home / ".claude" / "projects"
     proj_dir.mkdir(parents=True)
@@ -194,12 +212,12 @@ def test_sync_interactive_cancel_prints_cancelled(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(cli_module, "pick_projects", lambda p, prompter=None: None)
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["sync"])
+    result = runner.invoke(cli, ["export"])
     assert result.exit_code == 0
     assert "Cancelled" in result.output
 
 
-def test_sync_interactive_empty_selection_prints_nothing_selected(
+def test_export_interactive_empty_selection_prints_nothing_selected(
     tmp_path: Path, monkeypatch
 ):
     fake_home = tmp_path / "home"
@@ -216,6 +234,6 @@ def test_sync_interactive_empty_selection_prints_nothing_selected(
     monkeypatch.setattr(cli_module, "pick_projects", lambda p, prompter=None: [])
 
     runner = CliRunner()
-    result = runner.invoke(cli, ["sync"])
+    result = runner.invoke(cli, ["export"])
     assert result.exit_code == 0
     assert "Nothing selected" in result.output

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .frontmatter import has_field, replace_fields
-from .paths import output_dir_for_collection, resolve_session_dir
+from .paths import default_output_dir_for, resolve_session_dir
 from .reader import DEFAULT_MAX_BYTES, ReaderResult, read_session
 from .render import RenderConfig, render_session
 from .slug import build_filename, pick_slug, slugify_title
@@ -79,9 +79,6 @@ class SyncOrchestrator:
     ----------
     render_config
         Render toggles passed through to :func:`render_session`.
-    output_root
-        Root directory for generated markdown. The orchestrator writes into
-        ``output_root / <collection>/`` so multiple collections can coexist.
     max_bytes
         Pass-through to the reader for skip-with-warn on huge files.
     smart_slug_generator
@@ -92,12 +89,10 @@ class SyncOrchestrator:
         self,
         *,
         render_config: RenderConfig,
-        output_root: Path | None = None,
         max_bytes: int = DEFAULT_MAX_BYTES,
         smart_slug_generator: SmartSlugGenerator | None = None,
     ) -> None:
         self.render_config = render_config
-        self.output_root = output_root
         self.max_bytes = max_bytes
         self.smart_slug_generator = smart_slug_generator
 
@@ -105,14 +100,13 @@ class SyncOrchestrator:
         self,
         host_path: Path,
         *,
-        collection: str | None = None,
-        description: str | None = None,
+        output_dir: Path | None = None,
     ) -> SyncResult:
         """
         Sync a host project by resolving its Claude Code session directory.
         """
         session_dir = resolve_session_dir(host_path)
-        result = self.sync_session_dir(session_dir, collection=collection, description=description)
+        result = self.sync_session_dir(session_dir, output_dir=output_dir)
         result.project_path = host_path.resolve()
         return result
 
@@ -120,32 +114,28 @@ class SyncOrchestrator:
         self,
         session_dir: Path,
         *,
-        collection: str | None = None,
-        description: str | None = None,
+        output_dir: Path | None = None,
     ) -> SyncResult:
         """
-        Convert all sessions in ``session_dir`` and write markdown to the output dir.
+        Convert all sessions in ``session_dir`` and write markdown to ``output_dir``.
 
-        The ``description`` parameter is accepted but ignored; it is kept for
-        one task only so the existing CLI keeps compiling, and is removed in
-        the next task along with the rest of the legacy flag surface.
+        If ``output_dir`` is None, the destination is derived from the session
+        directory's basename via :func:`default_output_dir_for`.
         """
-        coll_name = collection or default_collection_name(session_dir)
-        out_dir = self._output_dir_for(coll_name)
+        out_dir = output_dir if output_dir is not None else default_output_dir_for(session_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         summary = SyncResult(
             project_path=None,
             session_dir=session_dir,
-            collection=coll_name,
+            collection=out_dir.name,
             output_dir=out_dir,
         )
 
         jsonl_paths = sorted(session_dir.glob("*.jsonl"))
         logger.info(
-            "sync: scanning %s -> %s (collection=%s, %d session files)",
+            "sync: scanning %s -> %s (%d session files)",
             session_dir,
             out_dir,
-            coll_name,
             len(jsonl_paths),
         )
         for i, jsonl_path in enumerate(jsonl_paths, 1):
@@ -154,21 +144,13 @@ class SyncOrchestrator:
 
         logger.info(
             "sync: done %s (converted=%d, unchanged=%d, skipped_for_size=%d, skipped_empty=%d)",
-            coll_name,
+            out_dir,
             summary.files_converted,
             summary.files_unchanged,
             summary.files_skipped_for_size,
             summary.files_skipped_empty,
         )
         return summary
-
-    def _output_dir_for(self, collection: str) -> Path:
-        """
-        Resolve the output directory for a collection, honoring ``output_root``.
-        """
-        if self.output_root is not None:
-            return self.output_root / collection
-        return output_dir_for_collection(collection)
 
     def _convert_one(
         self,
@@ -280,30 +262,29 @@ class SyncOrchestrator:
 
     def retitle_collection(
         self,
-        collection: str,
+        output_dir: Path,
         *,
         force: bool = False,
     ) -> RetitleResult:
         """
-        Apply smart titles to markdown files in an existing collection.
+        Apply smart titles to markdown files in an existing output directory.
 
-        Walks ``output_dir / collection / *.md`` and, for each file that
-        does not already carry ``smart_title: true`` in its frontmatter
-        (or every file if ``force`` is set), runs the smart-slug generator
-        on the existing markdown body, updates the frontmatter, and renames
-        the file when the resulting slug differs.
+        Walks ``output_dir / *.md`` and, for each file that does not already
+        carry ``smart_title: true`` in its frontmatter (or every file if
+        ``force`` is set), runs the smart-slug generator on the existing
+        markdown body, updates the frontmatter, and renames the file when
+        the resulting slug differs.
         """
         if self.smart_slug_generator is None:
             raise ValueError("retitle_collection requires a smart_slug_generator")
-        out_dir = self._output_dir_for(collection)
-        result = RetitleResult(collection=collection, output_dir=out_dir)
-        if not out_dir.exists():
-            logger.info("retitle: no output directory at %s, nothing to do", out_dir)
+        result = RetitleResult(collection=output_dir.name, output_dir=output_dir)
+        if not output_dir.exists():
+            logger.info("retitle: no output directory at %s, nothing to do", output_dir)
             return result
-        md_paths = sorted(out_dir.glob("*.md"))
+        md_paths = sorted(output_dir.glob("*.md"))
         logger.info(
             "retitle: scanning %s (%d markdown files, force=%s)",
-            out_dir,
+            output_dir,
             len(md_paths),
             force,
         )
@@ -318,7 +299,7 @@ class SyncOrchestrator:
                 result.files_skipped_failed += 1
         logger.info(
             "retitle: done %s (retitled=%d, already_smart=%d, failed=%d)",
-            collection,
+            output_dir,
             result.files_retitled,
             result.files_skipped_already_smart,
             result.files_skipped_failed,

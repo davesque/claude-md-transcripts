@@ -48,7 +48,6 @@ def output_root(tmp_path: Path) -> Path:
 
 
 def make_orch(
-    output_root: Path,
     smart_response: FakeRun | Exception | None = None,
 ) -> SyncOrchestrator:
     smart_runner = ClaudeFakeRunner(
@@ -57,16 +56,13 @@ def make_orch(
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     return SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=smart_gen,
     )
 
 
 def test_sync_with_smart_generator_marks_frontmatter(session_dir: Path, output_root: Path):
-    orch = make_orch(
-        output_root, smart_response=FakeRun(stdout="Inline smart title\n")
-    )
-    orch.sync_session_dir(session_dir, collection="coll1")
+    orch = make_orch(smart_response=FakeRun(stdout="Inline smart title\n"))
+    orch.sync_session_dir(session_dir, output_dir=output_root / "coll1")
     md_files = sorted((output_root / "coll1").glob("*.md"))
     assert md_files
     for f in md_files:
@@ -83,9 +79,8 @@ def test_sync_without_smart_generator_does_not_mark_frontmatter(
 ):
     orch = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
     )
-    orch.sync_session_dir(session_dir, collection="coll1")
+    orch.sync_session_dir(session_dir, output_dir=output_root / "coll1")
     for f in (output_root / "coll1").glob("*.md"):
         assert not has_field(f.read_text(), "smart_title", "true")
 
@@ -94,9 +89,8 @@ def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Pa
     # First, sync without smart generator so files are heuristic-named.
     plain = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1")
+    plain.sync_session_dir(session_dir, output_dir=output_root / "coll1")
     md_before = sorted((output_root / "coll1").glob("*.md"))
     assert md_before
     for f in md_before:
@@ -104,10 +98,9 @@ def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Pa
 
     # Now retitle.
     smart_orch = make_orch(
-        output_root,
         smart_response=FakeRun(stdout="Investigate slow user query\n"),
     )
-    result = smart_orch.retitle_collection("coll1")
+    result = smart_orch.retitle_collection(output_root / "coll1")
     assert result.files_total == len(md_before)
     assert result.files_retitled == len(md_before)
 
@@ -121,19 +114,16 @@ def test_retitle_collection_marks_files_smart(session_dir: Path, output_root: Pa
 
 
 def test_retitle_skips_already_smart_titled(session_dir: Path, output_root: Path):
-    orch = make_orch(
-        output_root, smart_response=FakeRun(stdout="First pass title\n")
-    )
-    orch.sync_session_dir(session_dir, collection="coll1")
+    orch = make_orch(smart_response=FakeRun(stdout="First pass title\n"))
+    orch.sync_session_dir(session_dir, output_dir=output_root / "coll1")
 
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="Different second-pass title\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=smart_gen,
     )
-    result = orch2.retitle_collection("coll1")
+    result = orch2.retitle_collection(output_root / "coll1")
     assert result.files_skipped_already_smart == 2
     assert result.files_retitled == 0
     # Smart runner should not have been called
@@ -141,19 +131,16 @@ def test_retitle_skips_already_smart_titled(session_dir: Path, output_root: Path
 
 
 def test_retitle_force_overrides_existing_smart_flag(session_dir: Path, output_root: Path):
-    orch = make_orch(
-        output_root, smart_response=FakeRun(stdout="Initial title\n")
-    )
-    orch.sync_session_dir(session_dir, collection="coll1")
+    orch = make_orch(smart_response=FakeRun(stdout="Initial title\n"))
+    orch.sync_session_dir(session_dir, output_dir=output_root / "coll1")
 
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="Refreshed title\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=smart_gen,
     )
-    result = orch2.retitle_collection("coll1", force=True)
+    result = orch2.retitle_collection(output_root / "coll1", force=True)
     assert result.files_retitled == 2
     assert all("refreshed-title" in p.name for p in (output_root / "coll1").glob("*.md"))
 
@@ -161,19 +148,17 @@ def test_retitle_force_overrides_existing_smart_flag(session_dir: Path, output_r
 def test_retitle_handles_smart_generator_failure(session_dir: Path, output_root: Path):
     plain = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1")
+    plain.sync_session_dir(session_dir, output_dir=output_root / "coll1")
 
     # smart returns nothing
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="\n"))
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch2 = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=smart_gen,
     )
-    result = orch2.retitle_collection("coll1")
+    result = orch2.retitle_collection(output_root / "coll1")
     assert result.files_skipped_failed == 2
     assert result.files_retitled == 0
 
@@ -181,20 +166,18 @@ def test_retitle_handles_smart_generator_failure(session_dir: Path, output_root:
 def test_retitle_requires_smart_generator(output_root: Path):
     orch = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
     )
     with pytest.raises(ValueError):
-        orch.retitle_collection("coll1")
+        orch.retitle_collection(output_root / "coll1")
 
 
 def test_retitle_returns_empty_for_missing_collection(output_root: Path):
     smart_runner = ClaudeFakeRunner(FakeRun(stdout="t\n"))
     orch = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=SmartSlugGenerator(runner=smart_runner),
     )
-    result = orch.retitle_collection("does-not-exist")
+    result = orch.retitle_collection(output_root / "does-not-exist")
     assert result.files_total == 0
     assert result.files_retitled == 0
 
@@ -202,9 +185,8 @@ def test_retitle_returns_empty_for_missing_collection(output_root: Path):
 def test_retitle_preserves_other_frontmatter(session_dir: Path, output_root: Path):
     plain = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
     )
-    plain.sync_session_dir(session_dir, collection="coll1")
+    plain.sync_session_dir(session_dir, output_dir=output_root / "coll1")
 
     # Track per-session frontmatter so we can compare deterministically
     # rather than relying on glob order.
@@ -221,10 +203,9 @@ def test_retitle_preserves_other_frontmatter(session_dir: Path, output_root: Pat
     smart_gen = SmartSlugGenerator(runner=smart_runner)
     orch = SyncOrchestrator(
         render_config=RenderConfig(),
-        output_root=output_root,
         smart_slug_generator=smart_gen,
     )
-    orch.retitle_collection("coll1")
+    orch.retitle_collection(output_root / "coll1")
     after_map = collect(output_root / "coll1")
     assert before_map.keys() == after_map.keys()
     for sid, before in before_map.items():
