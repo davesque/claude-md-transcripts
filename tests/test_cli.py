@@ -120,6 +120,40 @@ def test_export_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
     assert (out_root / "Users_fake_projects_bar").exists()
 
 
+def test_export_all_skips_dirs_without_jsonls(tmp_path: Path, monkeypatch):
+    """Project dirs with no *.jsonl files (e.g. only a memory/ subdir) are skipped.
+
+    Without this filter, we'd create empty output directories named after the
+    encoded session-dir (the fallback path), since recover_host_path can't read
+    a cwd from a dir with no JSONLs.
+    """
+    fake_home = tmp_path / "home"
+    proj_dir = fake_home / ".claude" / "projects"
+    proj_dir.mkdir(parents=True)
+
+    real = proj_dir / "-Users-fake-projects-foo"
+    real.mkdir()
+    _write_minimal_session(
+        real / "aaaaaaaa-1111-1111-1111-111111111111.jsonl",
+        cwd="/Users/fake/projects/foo",
+    )
+
+    empty = proj_dir / "-Users-fake-projects-empty"
+    empty.mkdir()
+    (empty / "memory").mkdir()
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["export-all"])
+    assert result.exit_code == 0, result.output
+
+    out_root = fake_home / ".claude" / "claude-md-transcripts"
+    assert (out_root / "Users_fake_projects_foo").exists()
+    assert not (out_root / "Users-fake-projects-empty").exists()
+    assert "Users-fake-projects-empty" not in result.output
+
+
 def test_export_all_with_explicit_output_root(tmp_path: Path, monkeypatch):
     fake_home = tmp_path / "home"
     proj_dir = fake_home / ".claude" / "projects"

@@ -221,7 +221,9 @@ def export_all(
     root = claude_projects_dir()
     if not root.exists():
         raise click.ClickException(f"No Claude Code projects directory at {root}")
-    project_dirs = sorted(p for p in root.iterdir() if p.is_dir())
+    project_dirs = sorted(
+        p for p in root.iterdir() if p.is_dir() and any(p.glob("*.jsonl"))
+    )
     if not project_dirs:
         click.echo("No project directories found.")
         return
