@@ -2,7 +2,7 @@
 Find Claude Code projects on disk and report metadata about each.
 
 Used by the interactive TUI in :mod:`picker` so the user can pick projects
-to sync without remembering encoded directory names. The original host
+to export without remembering encoded directory names. The original host
 path is recovered, when possible, by reading the ``cwd`` field of the
 first parseable JSONL line in each project directory; when no JSONL line
 yields a ``cwd``, the basename falls back to the encoded directory's

@@ -1,7 +1,7 @@
 """
 Interactive multi-select picker for Claude Code projects.
 
-Wraps :mod:`questionary` so the CLI's ``sync`` command can drop into a TUI
+Wraps :mod:`questionary` so the CLI's ``export`` command can drop into a TUI
 when no project path is given. The default prompter is replaceable via
 dependency injection so tests can drive the selection deterministically.
 """
@@ -83,7 +83,7 @@ def pick_projects(
                 "description": str(info.host_path) if info.host_path else str(info.session_dir),
             }
         )
-    message = "Select projects to sync"
+    message = "Select projects to export"
     hint = "(space to toggle, enter to confirm)"
     return chooser(message, choices, hint)
 

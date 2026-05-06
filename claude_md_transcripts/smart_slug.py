@@ -3,7 +3,7 @@ LLM-driven slug generation via Claude Code's headless mode (``claude -p``).
 
 The user is already authenticated to Claude Code, so this avoids the API-key
 plumbing the Anthropic SDK would need. The cost is one subprocess invocation
-per session, which is fine for a sync that runs occasionally and not in a
+per session, which is fine for an export that runs occasionally and not in a
 hot loop. Failure modes (claude missing, timeout, non-zero exit, empty
 output) all return ``None`` so callers can fall back to the heuristic slug.
 """
