@@ -75,3 +75,35 @@ def output_dir_for_collection(collection: str) -> Path:
     Return the markdown output directory for a given collection name.
     """
     return Path.home() / ".claude" / "qmd-transcripts" / collection
+
+
+def default_output_root() -> Path:
+    """
+    Return the default root directory for exported markdown.
+
+    All exports land under this directory, with one subdirectory per
+    host project (named by basename) unless the caller overrides with
+    an explicit ``--output-dir``.
+    """
+    return Path.home() / ".claude" / "claude-md-transcripts"
+
+
+def default_subdir_name(session_dir: Path) -> str:
+    """
+    Derive a sensible subdirectory name from a Claude Code session directory.
+
+    The encoded directory ``-Users-foo-projects-qmd`` becomes ``qmd``.
+    Falls back to ``"unknown"`` if no usable basename can be extracted.
+    """
+    name = session_dir.name.lstrip("-")
+    basename = name.rsplit("-", 1)[-1] if "-" in name else name
+    return basename or "unknown"
+
+
+def default_output_dir_for(session_dir: Path) -> Path:
+    """
+    Compose the default output directory for a session directory.
+
+    Equivalent to ``default_output_root() / default_subdir_name(session_dir)``.
+    """
+    return default_output_root() / default_subdir_name(session_dir)

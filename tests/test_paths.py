@@ -4,6 +4,9 @@ import pytest
 
 from claude_md_transcripts.paths import (
     claude_projects_dir,
+    default_output_dir_for,
+    default_output_root,
+    default_subdir_name,
     encode_host_path,
     output_dir_for_collection,
     resolve_session_dir,
@@ -63,3 +66,32 @@ def test_resolve_session_dir_raises_when_missing(tmp_path):
 def test_output_dir_for_collection():
     out = output_dir_for_collection("my-collection")
     assert out == Path.home() / ".claude" / "qmd-transcripts" / "my-collection"
+
+
+def test_default_output_root_returns_claude_md_transcripts_dir():
+    assert default_output_root() == Path.home() / ".claude" / "claude-md-transcripts"
+
+
+def test_default_subdir_name_extracts_basename_from_encoded_session_dir():
+    sd = Path("/anywhere/-Users-david-sanders-projects-qmd")
+    assert default_subdir_name(sd) == "qmd"
+
+
+def test_default_subdir_name_handles_short_encoded_dir(tmp_path):
+    sd = tmp_path / "-foo"
+    sd.mkdir()
+    assert default_subdir_name(sd) == "foo"
+
+
+def test_default_subdir_name_falls_back_to_unknown_for_empty_name(tmp_path):
+    sd = tmp_path / "-"
+    sd.mkdir()
+    assert default_subdir_name(sd) == "unknown"
+
+
+def test_default_output_dir_for_composes_root_and_subdir():
+    sd = Path("/anywhere/-Users-david-sanders-projects-qmd")
+    assert (
+        default_output_dir_for(sd)
+        == Path.home() / ".claude" / "claude-md-transcripts" / "qmd"
+    )
