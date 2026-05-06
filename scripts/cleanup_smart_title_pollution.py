@@ -204,9 +204,26 @@ def main(argv: list[str] | None = None) -> int:
         "--project",
         help="Limit cleanup to a single project basename (e.g. 'mdsearch').",
     )
+    parser.add_argument(
+        "--list-paths",
+        action="store_true",
+        help="Print every polluted file path (JSONLs and matching .md files) "
+        "grouped by project. Useful for review before --execute.",
+    )
     args = parser.parse_args(argv)
 
     findings = scan(project_filter=args.project)
+    if args.list_paths:
+        for f in findings:
+            print(f"# {f.basename} ({f.encoded_dir.name})")
+            print(f"# JSONLs ({len(f.polluted_jsonls)}):")
+            for j in f.polluted_jsonls:
+                print(j)
+            print(f"# .md files ({len(f.polluted_mds)}):")
+            for m in f.polluted_mds:
+                print(m)
+            print()
+        return 0
     report(findings)
     if not findings:
         return 0
