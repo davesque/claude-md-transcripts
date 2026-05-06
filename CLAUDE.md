@@ -1,6 +1,6 @@
 # claude-md-transcripts
 
-Python tool that converts Claude Code session JSONL transcripts into clean markdown collections on disk.
+Python tool that converts Claude Code session JSONL transcripts into clean markdown files on disk, one directory per project.
 
 ## Architecture
 
