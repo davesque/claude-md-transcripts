@@ -25,7 +25,7 @@ For each session JSONL, the converter writes one markdown file containing:
 - Subagent dispatches (`isSidechain: true`) marked with a `[subagent]` tag in the section header
 - A YAML-style frontmatter block carrying `session_id`, `source_path`, `message_count`, `start_time`, `end_time`, and (optionally) `title` and `smart_title`
 
-Output lands in `~/.claude/claude-md-transcripts/<basename>/`, one file per session.
+Output lands in `~/.claude/claude-md-transcripts/<encoded-host-path>/`, one file per session. The subdirectory name is the host path with the leading `/` dropped and the remaining `/` characters replaced with `_` (so `/Users/me/projects/qmd` becomes `Users_me_projects_qmd`). This is non-lossy, which avoids the basename-collision and `/` vs `.` ambiguity in Claude Code's own encoding.
 
 ## Requirements
 
@@ -66,7 +66,7 @@ claude-md-transcripts export
   [ ] nexus                     (45 sessions, 444 MB)
 ```
 
-Each selected project lands under `~/.claude/claude-md-transcripts/<basename>/`. Boolean flags like `--smart-titles` and `--include-thinking` apply to every selected project.
+Each selected project lands under its own encoded subdirectory in `~/.claude/claude-md-transcripts/`. Boolean flags like `--smart-titles` and `--include-thinking` apply to every selected project.
 
 For a single project by path:
 
@@ -97,13 +97,13 @@ claude-md-transcripts export HOST_PATH [OPTIONS]
 claude-md-transcripts export --session-dir DIR [OPTIONS]
 ```
 
-If neither `HOST_PATH` nor `--session-dir` is given, the command drops into an interactive checklist of every project found under `~/.claude/projects/`. Each selected project is exported into its own default subdirectory under `~/.claude/claude-md-transcripts/<basename>/`. Boolean flags (`--include-thinking`, `--smart-titles`) apply to every selected project. `--output-dir` is rejected in interactive mode because it would apply to every project.
+If neither `HOST_PATH` nor `--session-dir` is given, the command drops into an interactive checklist of every project found under `~/.claude/projects/`. Each selected project is exported into its own default subdirectory under `~/.claude/claude-md-transcripts/`. Boolean flags (`--include-thinking`, `--smart-titles`) apply to every selected project. `--output-dir` is rejected in interactive mode because it would apply to every project.
 
 Options:
 
 | Option | Description |
 | --- | --- |
-| `--output-dir DIR` | Where to write markdown for this run. Defaults to `~/.claude/claude-md-transcripts/<basename>/`. |
+| `--output-dir DIR` | Where to write markdown for this run. Defaults to `~/.claude/claude-md-transcripts/<encoded-host-path>/`. |
 | `--include-thinking` | Include assistant `thinking` blocks. Off by default since extended thinking is verbose, often empty (when the engine returns encrypted signatures), and rarely useful for retrieval. |
 | `--smart-titles` | Inline LLM titles via `claude -p`. Adds 5-25 seconds and a few cents per session. |
 | `--max-bytes N` | Skip session files larger than N bytes (default 50 MB). Pathologically large files are usually dominated by Playwright screenshots that the renderer would discard anyway. |
@@ -182,10 +182,10 @@ A querying agent that finds a hit can use the path and line number to read the f
 
 ```
 ~/.claude/claude-md-transcripts/
-├── qmd/
+├── Users_me_projects_qmd/
 │   ├── 2026-05-03_inspect-and-render-claude-sessions_af6ff891.md
 │   └── 2026-05-04_smart-title-generation_bcdc78de.md
-└── nexus/
+└── Users_me_projects_nexus/
     └── 2026-04-12_review-the-grpc-handler_55d72cab.md
 ```
 
@@ -227,7 +227,7 @@ The tool deliberately stops at "markdown on disk." From there you can:
 
 - Index with [qmd](https://github.com/davesque/qmd):
   ```sh
-  qmd collection add ~/.claude/claude-md-transcripts/qmd --name qmd-claude-sessions --mask "**/*.md"
+  qmd collection add ~/.claude/claude-md-transcripts/Users_me_projects_qmd --name qmd-claude-sessions --mask "**/*.md"
   qmd update
   qmd query "the auth bug we debugged" -c qmd-claude-sessions
   ```

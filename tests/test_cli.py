@@ -10,7 +10,9 @@ from claude_md_transcripts.paths import encode_host_path
 
 
 def _write_minimal_session(
-    target: Path, session_id: str = "11111111-1111-1111-1111-111111111111"
+    target: Path,
+    session_id: str = "11111111-1111-1111-1111-111111111111",
+    cwd: str | None = None,
 ) -> None:
     payloads = [
         {
@@ -20,6 +22,7 @@ def _write_minimal_session(
             "timestamp": "2026-05-01T10:00:00.000Z",
             "sessionId": session_id,
             "isSidechain": False,
+            "cwd": cwd or "/Users/fake/projects/foo",
             "message": {"role": "user", "content": "Investigate slow query"},
         },
     ]
@@ -76,7 +79,9 @@ def test_export_with_host_path_uses_default_output_dir(tmp_path: Path, monkeypat
     result = runner.invoke(cli, ["export", str(host_path)])
     assert result.exit_code == 0, result.output
 
-    expected_out = fake_home / ".claude" / "claude-md-transcripts" / "foo"
+    expected_out = (
+        fake_home / ".claude" / "claude-md-transcripts" / "Users_fake_projects_foo"
+    )
     assert expected_out.exists()
     assert any(expected_out.glob("*.md"))
 
@@ -86,13 +91,21 @@ def test_export_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
     proj_dir = fake_home / ".claude" / "projects"
     proj_dir.mkdir(parents=True)
 
-    for name, sid in (
-        ("-Users-fake-projects-foo", "aaaaaaaa-1111-1111-1111-111111111111"),
-        ("-Users-fake-projects-bar", "bbbbbbbb-2222-2222-2222-222222222222"),
+    for name, sid, cwd in (
+        (
+            "-Users-fake-projects-foo",
+            "aaaaaaaa-1111-1111-1111-111111111111",
+            "/Users/fake/projects/foo",
+        ),
+        (
+            "-Users-fake-projects-bar",
+            "bbbbbbbb-2222-2222-2222-222222222222",
+            "/Users/fake/projects/bar",
+        ),
     ):
         d = proj_dir / name
         d.mkdir()
-        _write_minimal_session(d / f"{sid}.jsonl", session_id=sid)
+        _write_minimal_session(d / f"{sid}.jsonl", session_id=sid, cwd=cwd)
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
@@ -103,8 +116,8 @@ def test_export_all_iterates_session_dirs(tmp_path: Path, monkeypatch):
     assert "bar" in result.output
 
     out_root = fake_home / ".claude" / "claude-md-transcripts"
-    assert (out_root / "foo").exists()
-    assert (out_root / "bar").exists()
+    assert (out_root / "Users_fake_projects_foo").exists()
+    assert (out_root / "Users_fake_projects_bar").exists()
 
 
 def test_export_all_with_explicit_output_root(tmp_path: Path, monkeypatch):
@@ -113,7 +126,10 @@ def test_export_all_with_explicit_output_root(tmp_path: Path, monkeypatch):
     proj_dir.mkdir(parents=True)
     d = proj_dir / "-Users-fake-projects-foo"
     d.mkdir()
-    _write_minimal_session(d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl")
+    _write_minimal_session(
+        d / "aaaaaaaa-1111-1111-1111-111111111111.jsonl",
+        cwd="/Users/fake/projects/foo",
+    )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
     custom_root = tmp_path / "custom"
@@ -122,8 +138,9 @@ def test_export_all_with_explicit_output_root(tmp_path: Path, monkeypatch):
     result = runner.invoke(cli, ["export-all", "--output-dir", str(custom_root)])
     assert result.exit_code == 0, result.output
 
-    assert (custom_root / "foo").exists()
-    assert any((custom_root / "foo").glob("*.md"))
+    out = custom_root / "Users_fake_projects_foo"
+    assert out.exists()
+    assert any(out.glob("*.md"))
 
 
 def test_help_lists_renamed_subcommands():
@@ -163,13 +180,21 @@ def test_export_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
     fake_home = tmp_path / "home"
     proj_dir = fake_home / ".claude" / "projects"
     proj_dir.mkdir(parents=True)
-    for name, sid in (
-        ("-Users-fake-projects-foo", "aaaaaaaa-1111-1111-1111-111111111111"),
-        ("-Users-fake-projects-bar", "bbbbbbbb-2222-2222-2222-222222222222"),
+    for name, sid, cwd in (
+        (
+            "-Users-fake-projects-foo",
+            "aaaaaaaa-1111-1111-1111-111111111111",
+            "/Users/fake/projects/foo",
+        ),
+        (
+            "-Users-fake-projects-bar",
+            "bbbbbbbb-2222-2222-2222-222222222222",
+            "/Users/fake/projects/bar",
+        ),
     ):
         d = proj_dir / name
         d.mkdir()
-        _write_minimal_session(d / f"{sid}.jsonl", session_id=sid)
+        _write_minimal_session(d / f"{sid}.jsonl", session_id=sid, cwd=cwd)
 
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
@@ -193,8 +218,8 @@ def test_export_interactive_mode_invokes_picker(tmp_path: Path, monkeypatch):
     assert {"foo", "bar"} <= basenames
 
     out_root = fake_home / ".claude" / "claude-md-transcripts"
-    assert (out_root / "foo").exists()
-    assert (out_root / "bar").exists()
+    assert (out_root / "Users_fake_projects_foo").exists()
+    assert (out_root / "Users_fake_projects_bar").exists()
     assert "Totals across 2 projects" in result.output
 
 

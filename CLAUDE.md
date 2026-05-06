@@ -68,12 +68,18 @@ When Claude Code adds new types, the lenient parser warns and drops them. Add ex
 
 ## Path encoding
 
-Claude Code encodes a host project path into a directory name by replacing both `/` and `.` with `-`:
+Claude Code encodes a host project path into a directory name under `~/.claude/projects/` by replacing both `/` and `.` with `-`:
 
 - `/Users/david.sanders/projects/qmd` → `-Users-david-sanders-projects-qmd`
 - `/Users/me/projects/foo/.claude/x` → `-Users-me-projects-foo--claude-x`
 
 The encoding is lossy in reverse (we can't tell `/` apart from `.`), but forward encoding is well-defined. See `paths.py:encode_host_path`.
+
+For our own output subdirectories under `~/.claude/claude-md-transcripts/`, we use a separate non-lossy encoding (`paths.py:encode_host_path_as_subdir`): drop the leading `/`, replace remaining `/` with `_`, keep `.` intact:
+
+- `/Users/david.sanders/projects/qmd` → `Users_david.sanders_projects_qmd`
+
+The host path is recovered by reading the first JSONL's `cwd` field (`paths.py:recover_host_path`). When recovery fails (no parseable `cwd`), `default_subdir_name` falls back to the encoded session-dir name with the leading `-` stripped, then to `"unknown"` if that's empty.
 
 ## Running smoke tests safely
 

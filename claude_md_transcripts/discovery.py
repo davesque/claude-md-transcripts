@@ -11,10 +11,11 @@ trailing segment.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+from .paths import recover_host_path
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def discover_projects(root: Path) -> list[ProjectInfo]:
         sessions = sorted(d.glob("*.jsonl"))
         if not sessions:
             continue
-        host_path = _recover_host_path(sessions)
+        host_path = recover_host_path(d)
         basename = host_path.name if host_path else _basename_from_encoded(d.name)
         total_size = sum(p.stat().st_size for p in sessions)
         out.append(
@@ -97,34 +98,6 @@ def discover_projects(root: Path) -> list[ProjectInfo]:
         )
     out.sort(key=lambda p: p.basename.lower())
     return out
-
-
-def _recover_host_path(sessions: list[Path]) -> Path | None:
-    """
-    Read sessions until a ``cwd`` field is found, then return it as a Path.
-
-    Tries the first line of each session, falling back to subsequent lines
-    if the first is malformed or has no ``cwd``. Returns ``None`` if no
-    session yields a value.
-    """
-    for jsonl in sessions:
-        try:
-            with jsonl.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    cwd = obj.get("cwd") if isinstance(obj, dict) else None
-                    if isinstance(cwd, str) and cwd:
-                        return Path(cwd)
-        except OSError as e:
-            logger.debug("could not read %s: %s", jsonl, e)
-            continue
-    return None
 
 
 def _basename_from_encoded(encoded: str) -> str:
