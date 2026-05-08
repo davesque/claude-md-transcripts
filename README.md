@@ -239,6 +239,26 @@ The tool deliberately stops at "markdown on disk." From there you can:
 
 Each markdown file carries `source_path` in its frontmatter, so an agent that finds a hit can replay the original session if it needs more detail than the pointer summary provides.
 
+## Preserve your session history
+
+Claude Code deletes session JSONLs older than `cleanupPeriodDays` (default **30 days**) out of `~/.claude/projects/`. This tool can only export what's still on disk, so if you want a long-term archive, bump the retention before sessions you care about disappear.
+
+In `~/.claude/settings.json`:
+
+```json
+{
+  "cleanupPeriodDays": 36500
+}
+```
+
+That's effectively "keep forever." Don't set it to `0` — there's a [known bug](https://github.com/anthropics/claude-code/issues/23710) where `0` disables session persistence entirely instead of disabling cleanup, and Claude Code stops writing JSONLs at all.
+
+A reasonable workflow is:
+
+1. Set `cleanupPeriodDays` high so Claude Code keeps every session indefinitely.
+2. Run this tool's `export-all` regularly (cron, `launchd`) to mirror those sessions to markdown.
+3. Optionally prune `~/.claude/projects/` yourself once a session has been exported, if you want to reclaim disk.
+
 ## Workflow recommendations
 
 A reasonable two-step flow:
