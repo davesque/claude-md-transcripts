@@ -112,7 +112,7 @@ Options:
 
 ### `export-all`
 
-Iterate every project under `~/.claude/projects/` and run `export` on each. The `--output-dir` flag here is the *root* under which one subdirectory per project is created (default `~/.claude/claude-md-transcripts/`).
+Iterate every project under `~/.claude/projects/` that contains at least one `*.jsonl` and run `export` on each. The `--output-dir` flag here is the *root* under which one subdirectory per project is created (default `~/.claude/claude-md-transcripts/`).
 
 ### `retitle`
 
