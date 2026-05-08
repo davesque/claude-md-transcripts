@@ -7,7 +7,7 @@ Convert your Claude Code session JSONL transcripts into clean markdown files, or
 Claude Code records every session as a JSONL file under `~/.claude/projects/<encoded-project-path>/<session-id>.jsonl`. Those files are dense and hard to search:
 
 - Tool I/O is bulky (long bash output, file reads, MCP responses)
-- Image attachments are stored as base64, so a single Playwright screenshot can blow a session up to hundreds of megabytes
+- Image attachments are stored as base64, so a session with several Playwright screenshots can balloon to hundreds of megabytes
 - Per-line metadata (`sessionId`, `cwd`, `gitBranch`, `version`, etc.) repeats on almost every line
 - Auxiliary line types like `file-history-snapshot`, `permission-mode`, and `attachment` carry no conversation content
 
@@ -25,7 +25,7 @@ For each session JSONL, the converter writes one markdown file containing:
 - Subagent dispatches (`isSidechain: true`) marked with a `[subagent]` tag in the section header
 - A YAML-style frontmatter block carrying `session_id`, `source_path`, `message_count`, `start_time`, `end_time`, and (optionally) `title` and `smart_title`
 
-Output lands in `~/.claude/claude-md-transcripts/<encoded-host-path>/`, one file per session. The subdirectory name is the host path with the leading `/` dropped and the remaining `/` characters replaced with `_` (so `/Users/me/projects/qmd` becomes `Users_me_projects_qmd`). This is non-lossy, which avoids the basename-collision and `/` vs `.` ambiguity in Claude Code's own encoding.
+Output lands in `~/.claude/claude-md-transcripts/<encoded-host-path>/`, one file per session.
 
 ## Requirements
 
