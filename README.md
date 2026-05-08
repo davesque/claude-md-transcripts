@@ -225,7 +225,7 @@ With `--smart-titles` (during export) or via `retitle` (after export), the tool 
 
 The tool deliberately stops at "markdown on disk." From there you can:
 
-- Index with [qmd](https://github.com/davesque/qmd):
+- Index with [qmd](https://github.com/tobi/qmd):
   ```sh
   qmd collection add ~/.claude/claude-md-transcripts/Users_me_projects_qmd --name qmd-claude-sessions --mask "**/*.md"
   qmd update
