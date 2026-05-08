@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_HEAD_LINES: int = 100
 DEFAULT_TAIL_LINES: int = 100
 DEFAULT_TIMEOUT: float = 30.0
-DEFAULT_MODEL: str | None = "claude-haiku-4-5"
+DEFAULT_MODEL: str | None = "haiku"
 
 _PROMPT = (
     "You are summarizing a Claude Code session transcript. "
