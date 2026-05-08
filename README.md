@@ -104,9 +104,9 @@ Options:
 | Option | Description |
 | --- | --- |
 | `--output-dir DIR` | Where to write markdown for this run. Defaults to `~/.claude/claude-md-transcripts/<encoded-host-path>/`. |
-| `--include-thinking` | Include assistant `thinking` blocks. Off by default since extended thinking is verbose, often empty (when the engine returns encrypted signatures), and rarely useful for retrieval. |
+| `--include-thinking` | Include assistant `thinking` blocks. Off by default. |
 | `--smart-titles` | Inline LLM titles via `claude -p`. Adds 5-25 seconds and a few cents per session. |
-| `--max-bytes N` | Skip session files larger than N bytes (default 50 MB). Pathologically large files are usually dominated by Playwright screenshots that the renderer would discard anyway. |
+| `--max-bytes N` | Skip session files larger than N bytes (default 50 MB). |
 
 `export` is idempotent: it skips any session whose source JSONL hasn't been modified since the last run. Safe to put on a cron schedule.
 
@@ -125,7 +125,7 @@ claude-md-transcripts retitle --output-dir DIR [OPTIONS]
 
 Walks the output directory, calls `claude -p` once per file to summarize, updates the markdown frontmatter, and renames each file. Skips files that already carry `smart_title: true` in their frontmatter unless you pass `--force`.
 
-This is a separate step from `export` because LLM title generation is slow and billable. Most users want fast deterministic exports (cron-friendly) followed by occasional `retitle` passes.
+Run this when you want to upgrade filenames. Smart title generation is slower and billable, so a common pattern is fast deterministic exports on a cron schedule with `retitle` runs on demand.
 
 Options:
 
@@ -288,6 +288,6 @@ MIT. See [LICENSE](LICENSE) for the full text.
 
 ## Notes and gotchas
 
-- **Session JSONL schema is not officially documented.** Models in `claude_md_transcripts/schema.py` are derived from inspection plus community references. Forward compatibility is built in: unknown line types and unknown content blocks are skipped with a warning, not raised, so a Claude Code upgrade that introduces a new field type won't crash an export. New types just get logged for review.
-- **Idempotency uses mtime.** If a session is currently active, every export run will re-render it. That's by design and cheap. The alternative (hash-based) would be slower without much practical benefit.
+- **Session JSONL schema is not officially documented.** The schema this tool parses against is derived from inspection plus community references. Forward compatibility is built in: unknown line types and unknown content blocks are skipped with a warning, not raised, so a Claude Code upgrade that introduces a new field type won't crash an export. New types just get logged for review.
+- **Idempotency uses mtime.** If a session is currently active, every export run will re-render it. That's by design and cheap.
 - **No UUID dedup.** Some session files contain lines with the same UUID but slightly different `cwd`, `promptId`, or `gitBranch`, likely from session resume/replay. The renderer keeps all of them in source order to avoid creating confusing gaps in the conversation.
